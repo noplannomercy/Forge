@@ -1,6 +1,7 @@
 from config import Config
 from extractors import EXTRACTORS
 from extractors.image import prepare_image
+from extractors.office import pptx_to_pdf
 from extractors.pdf import extract_text, pdf_to_images
 from job_store import JobStore
 from models import ConvertResult, DocumentResult, Job, JobStatus, Quality
@@ -27,14 +28,17 @@ async def process_job(
 
         elif route == "vlm":
             # 이미지 준비
-            if job.source_format == "pdf":
+            if job.source_format == "pptx":
+                pdf_bytes = await pptx_to_pdf(file_bytes)
+                images = await pdf_to_images(pdf_bytes)
+            elif job.source_format == "pdf":
                 images = await pdf_to_images(file_bytes)
             else:
                 # jpg, png 등 이미지 파일
                 img_bytes = await prepare_image(file_bytes)
                 images = [img_bytes]
 
-            # VLM 호출
+            # VLM semantic 호출
             vlm_client = VLMClient(config)
             try:
                 doc_result: DocumentResult = await vlm_client.process_document(images)
@@ -54,6 +58,9 @@ async def process_job(
                     total_pages=doc_result.total_pages,
                     failed_pages=doc_result.failed_pages,
                     confidence=doc_result.confidence,
+                    total_batches=doc_result.total_batches,
+                    failed_batches=doc_result.failed_batches,
+                    method="semantic",
                 ),
             )
             await store.save_result(job.id, result)
