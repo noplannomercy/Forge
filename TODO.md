@@ -30,17 +30,28 @@
 - Cortex와 완전 독립 — Cortex 코드 수정 0
 - VLM은 이미지 기반 문서에만 사용 (텍스트 있으면 추출)
 - OpenAI-compatible 엔드포인트 하나로 VLM provider 통일
-- LibreOffice, Docling, GPU 불필요
 
-## v2 — 멀티모달 확장 (수동 테스트에서 도출, 우선순위 높음)
+## v2 — Semantic VLM (스펙+플랜 완료, 구현 대기)
 
-- [ ] **PPTX/DOCX VLM 경로 추가** — 슬라이드/페이지별 이미지 렌더링 → VLM
-  - PPTX는 이미지/도표/그림 위주라 extract만으로 답 없음 (수동 테스트 확인)
-  - DOCX는 텍스트 위주라 extract로 쓸만하지만, 이미지 많은 문서는 동일 문제
-  - 라우터에서 `?mode=text`/`?mode=visual` 파라미터로 사용자 선택 또는 자동 분기
-- [ ] **quality 메타에 이미지 정보 추가** — 임베디드 이미지 개수/비율 포함
-  - 현재 confidence:"high"만으로는 이미지 누락 여부를 Cortex(LLM)가 판단 불가
-  - Cortex에서 "이 변환 결과가 신뢰할 만한가" 판단할 근거 필요
+> 스펙: docs/superpowers/specs/2026-04-07-forge-semantic-vlm-design.md
+> 플랜: docs/superpowers/plans/2026-04-07-forge-semantic-vlm.md
+
+- [ ] Task 1: Config + Models 확장 (vlm_batch_size, Quality 배치 필드)
+- [ ] Task 2: VLM Client semantic 배치 모드 (process_batch, 멀티 이미지)
+- [ ] Task 3: LibreOffice headless 래퍼 (PPTX→PDF)
+- [ ] Task 4: Router — PPTX→VLM + `?route=` 파라미터
+- [ ] Task 5: Worker — PPTX 파이프라인 + semantic 결과 조립
+- [ ] Task 6: API — route 쿼리 파라미터
+- [ ] Task 7: Dockerfile + 최종 검증
+
+핵심 변경:
+- VLM 경로를 페이지별 OCR → **배치 단위 semantic 재구성**으로 교체
+- PPTX → LibreOffice headless → PDF → 이미지 → semantic VLM
+- `?route=extract|vlm` 파라미터로 강제 지정 가능
+- quality 메타에 total_batches/failed_batches/method 추가
+
+## v2 — 추가 개선 (semantic 이후)
+
 - [ ] **결과 다운로드 엔드포인트** — `/result/{job_id}?format=text` 또는 `/result/{job_id}/download`
   - 현재 JSON 감싸서 반환 → 마크다운 텍스트만 바로 받을 수 있어야 Cortex 연동 편함
 
