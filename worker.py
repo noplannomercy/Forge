@@ -1,11 +1,36 @@
+import logging
+
 from config import Config
 from extractors import EXTRACTORS
 from extractors.image import prepare_image
 from extractors.office import pptx_to_pdf
 from extractors.pdf import extract_text, pdf_to_images
 from job_store import JobStore
+from meta import MetaExtractor
 from models import ConvertResult, DocumentResult, Job, JobStatus, Quality
 from vlm import VLMClient
+
+logger = logging.getLogger(__name__)
+
+PROMPT_VERSION = "semantic-v1"
+META_PROMPT_VERSION = "meta-v1"
+
+
+async def _extract_meta(result_text: str, meta_extractor: MetaExtractor | None, config: Config) -> dict:
+    """메타 추출. 실패 시 빈 dict 반환. meta_extractor가 없으면 임시 생성."""
+    extractor = meta_extractor
+    should_close = False
+    if extractor is None:
+        extractor = MetaExtractor(config)
+        should_close = True
+    try:
+        return await extractor.extract(result_text)
+    except Exception:
+        logger.warning("Meta extraction failed for job", exc_info=True)
+        return {}
+    finally:
+        if should_close:
+            await extractor.close()
 
 
 async def process_job(
@@ -14,6 +39,7 @@ async def process_job(
     route: str,
     store: JobStore,
     config: Config,
+    meta_extractor: MetaExtractor | None = None,
 ) -> None:
     """비동기 변환 워커. asyncio.create_task로 호출됨."""
     await store.update_status(job.id, JobStatus.PROCESSING)
@@ -26,6 +52,11 @@ async def process_job(
                 result = await EXTRACTORS[job.source_format](file_bytes, job.file_name)
             await store.save_result(job.id, result)
 
+            # extract 경로도 메타 추출
+            meta = await _extract_meta(result.text, meta_extractor, config)
+            if hasattr(store, "save_meta") and meta:
+                await store.save_meta(job.id, meta, META_PROMPT_VERSION)
+
         elif route == "vlm":
             # 이미지 준비
             if job.source_format == "pptx":
@@ -34,7 +65,6 @@ async def process_job(
             elif job.source_format == "pdf":
                 images = await pdf_to_images(file_bytes)
             else:
-                # jpg, png 등 이미지 파일
                 img_bytes = await prepare_image(file_bytes)
                 images = [img_bytes]
 
@@ -64,6 +94,11 @@ async def process_job(
                 ),
             )
             await store.save_result(job.id, result)
+
+            # 메타 추출
+            meta = await _extract_meta(result.text, meta_extractor, config)
+            if hasattr(store, "save_meta") and meta:
+                await store.save_meta(job.id, meta, META_PROMPT_VERSION)
 
     except Exception as e:
         await store.save_error(job.id, str(e))
