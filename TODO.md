@@ -59,13 +59,42 @@
 - [ ] **결과 다운로드 엔드포인트** — `/result/{job_id}?format=text` 또는 `/result/{job_id}/download`
   - 현재 JSON 감싸서 반환 → 마크다운 텍스트만 바로 받을 수 있어야 Cortex 연동 편함
 
-## v3 — 백오피스 + LLMOps (방향 미정, /office-hours로 시작)
+## v3 — DB + LLM 메타 추출 (스펙+플랜+eng-review 완료, 구현 대기)
 
-- [ ] **LLMOps API** — 프롬프트 버전 관리, A/B 테스트, 코드 배포 없이 프롬프트 교체
-- [ ] **모니터링** — VLM 호출 비용/지연/성공률 추적, 잔액 알림
+> 스펙: docs/superpowers/specs/2026-04-07-forge-db-meta-design.md
+> 플랜: docs/superpowers/plans/2026-04-07-forge-db-meta.md
+
+- [ ] Task 1: 스키마 + Config + 의존성 (schema.sql, DATABASE_URL, META_LLM_*, asyncpg)
+- [ ] Task 2: Models 확장 (Job에 meta, requested_by, prompt_version 등)
+- [ ] Task 3: PostgresJobStore + VLMLogStore (asyncpg)
+- [ ] Task 4: MetaExtractor — LLM 메타 자동 추출 (VLM fallback)
+- [ ] Task 5: BatchResult 토큰/비용 정보 추가
+- [ ] Task 6: Worker — 메타 추출 단계 + VLM 로그 기록
+- [ ] Task 7: API — requested_by, ?format=text, DB pool lifecycle
+
+핵심:
+- Cortex PostgreSQL에 forge_ 테이블 (forge_jobs, forge_vlm_logs, forge_daily_stats view)
+- 파일 넣으면 변환 후 LLM이 자동으로 메타 추출 → JSONB 저장
+- MetaExtractor는 app.state singleton (eng-review 반영)
+- DB pool startup/shutdown lifecycle (eng-review 반영)
+
+eng-review 발견사항 (플랜에 반영 완료):
+- save_result COALESCE(started_at, created_at)
+- InMemoryJobStore.save_meta() 추가
+- meta.py JSON 파싱 강화 (첫{~마지막} 추출)
+- extract 경로 메타 추출 테스트 추가
+
+## v3 — 백오피스 UI + LLMOps (v3 DB 완료 후)
+
 - [ ] **백오피스 UI** — Job 목록, 결과 미리보기, 재처리 버튼 (curl 운영 불가)
-- [ ] **품질 관리** — 변환 결과 평가/피드백 루프, 어떤 문서가 잘 되고 안 되는지 데이터 축적
-- 방향 결정 필요: Cortex 백오피스에 Forge 탭 추가 vs Forge 독립 백오피스
+- [ ] **LLMOps API** — 프롬프트 버전 관리, A/B 테스트, 코드 배포 없이 프롬프트 교체
+- [ ] **모니터링 대시보드** — VLM 호출 비용/지연/성공률 (forge_daily_stats + forge_vlm_logs 활용)
+- [ ] **품질 관리** — 변환 결과 평가/피드백 루프
+
+eng-review defer 항목:
+- [ ] PostgreSQL 통합 테스트 (CI/CD에서 처리)
+- [ ] VLMClient singleton화 (현재 Job당 생성, 빈도 낮아서 당장 안 급함)
+- [ ] materialized view REFRESH 전략 (cron 또는 API 호출 시)
 
 ## 향후 개선 (인프라)
 
@@ -88,7 +117,9 @@
 | 포맷 | 테스트 | extract 품질 | 비고 |
 |------|--------|-------------|------|
 | DOCX | 3건 | **쓸만함** | 텍스트+표 위주, 이미지 없는 문서들 |
-| PPTX | 2건 | **불충분** | 이미지/도표 위주, VLM 없이 답 없음 |
+| PPTX (v1 extract) | 2건 | **불충분** | 이미지/도표 위주, extract만으로 답 없음 |
+| PPTX (v2 semantic) | 1건 | **쓸만함** | LibreOffice→PDF→VLM, 다이어그램 추출 성공 |
+| PDF (v2 semantic) | 1건 (25.6MB, 64p) | **쓸만함** | 48,868자 구조화 마크다운, 13배치 전부 성공 |
 | XLSX | (unit test) | **양호** | 표 추출 정확 |
 | PDF (스캔) | 1건 (25.6MB, 64p) | VLM 경로 정상 분기 | VLM 서버 없어 64페이지 전부 실패 placeholder |
 
