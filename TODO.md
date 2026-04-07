@@ -59,7 +59,15 @@
 - [ ] **결과 다운로드 엔드포인트** — `/result/{job_id}?format=text` 또는 `/result/{job_id}/download`
   - 현재 JSON 감싸서 반환 → 마크다운 텍스트만 바로 받을 수 있어야 Cortex 연동 편함
 
-## 향후 개선 (v3)
+## v3 — 백오피스 + LLMOps (방향 미정, /office-hours로 시작)
+
+- [ ] **LLMOps API** — 프롬프트 버전 관리, A/B 테스트, 코드 배포 없이 프롬프트 교체
+- [ ] **모니터링** — VLM 호출 비용/지연/성공률 추적, 잔액 알림
+- [ ] **백오피스 UI** — Job 목록, 결과 미리보기, 재처리 버튼 (curl 운영 불가)
+- [ ] **품질 관리** — 변환 결과 평가/피드백 루프, 어떤 문서가 잘 되고 안 되는지 데이터 축적
+- 방향 결정 필요: Cortex 백오피스에 Forge 탭 추가 vs Forge 독립 백오피스
+
+## 향후 개선 (인프라)
 
 - [ ] Redis 기반 JobStore + Worker 분리 + 파일 스트리밍(SpooledTemporaryFile)
   - 현재 인메모리 dict + file_bytes 전체 메모리 적재 방식
