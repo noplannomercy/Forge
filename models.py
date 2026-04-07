@@ -51,9 +51,17 @@ class Job(BaseModel):
     id: str
     status: JobStatus
     file_name: str
+    file_size: int | None = None
     source_format: str
     route: str
+    method: str = "extract"
+    requested_by: str | None = None
     result: ConvertResult | None = None
+    meta: dict = Field(default_factory=dict)
+    prompt_version: str | None = None
+    meta_prompt_version: str | None = None
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime | None = None
     completed_at: datetime | None = None
+    processing_ms: int | None = None

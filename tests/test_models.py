@@ -81,3 +81,38 @@ def test_document_result_with_batches():
     )
     assert dr.total_batches == 2
     assert dr.failed_batches == 0
+
+
+def test_job_with_extended_fields():
+    job = Job(
+        id="test-uuid",
+        status=JobStatus.QUEUED,
+        file_name="test.pdf",
+        source_format="pdf",
+        route="vlm",
+        method="semantic",
+        requested_by="cortex-api",
+        file_size=1024000,
+        prompt_version="semantic-v1",
+    )
+    assert job.method == "semantic"
+    assert job.requested_by == "cortex-api"
+    assert job.file_size == 1024000
+    assert job.prompt_version == "semantic-v1"
+    assert job.meta == {}
+    assert job.meta_prompt_version is None
+    assert job.started_at is None
+    assert job.processing_ms is None
+
+
+def test_job_with_meta():
+    job = Job(
+        id="test-uuid",
+        status=JobStatus.COMPLETED,
+        file_name="제안서.pdf",
+        source_format="pdf",
+        route="vlm",
+        meta={"category": "제안서", "client": "안산시"},
+    )
+    assert job.meta["category"] == "제안서"
+    assert job.meta["client"] == "안산시"
