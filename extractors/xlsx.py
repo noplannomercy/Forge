@@ -31,11 +31,11 @@ async def extract(file_bytes: bytes, file_name: str) -> ConvertResult:
         sheet_parts.append("\n".join(table_rows))
         parts.append("\n\n".join(sheet_parts))
 
+    num_sheets = len(wb.sheetnames)
     wb.close()
 
     full_text = "\n\n---\n\n".join(parts)
     total_chars = len(full_text.strip())
-    num_sheets = len(wb.sheetnames)
 
     return ConvertResult(
         text=full_text,

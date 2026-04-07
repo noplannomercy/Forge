@@ -15,9 +15,10 @@ def _pil_to_bytes(pil_image: Image.Image) -> bytes:
 async def extract_text(file_bytes: bytes, file_name: str) -> ConvertResult:
     """텍스트 PDF → Markdown (추출 경로)"""
     pdf = pdfium.PdfDocument(file_bytes)
+    total_page_count = len(pdf)
     pages_text: list[str] = []
 
-    for page_index in range(len(pdf)):
+    for page_index in range(total_page_count):
         page = pdf[page_index]
         textpage = page.get_textpage()
         text = textpage.get_text_range()
@@ -30,7 +31,7 @@ async def extract_text(file_bytes: bytes, file_name: str) -> ConvertResult:
 
     full_text = "\n\n---\n\n".join(pages_text)
     total_chars = len(full_text.strip())
-    num_pages = len(pages_text) if pages_text else 1
+    num_pages = total_page_count if total_page_count > 0 else 1
 
     return ConvertResult(
         text=full_text,

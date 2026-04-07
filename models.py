@@ -35,6 +35,13 @@ class ConvertResult(BaseModel):
     quality: Quality
 
 
+class DocumentResult(BaseModel):
+    text: str
+    total_pages: int
+    failed_pages: int
+    confidence: str  # "high" | "partial"
+
+
 class Job(BaseModel):
     id: str
     status: JobStatus

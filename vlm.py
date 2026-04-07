@@ -4,18 +4,10 @@ import base64
 import httpx
 
 from config import Config
-from models import PageResult
+from models import DocumentResult, PageResult
 
 MAX_RETRIES = 3
 RETRY_DELAYS = [1, 2, 4]  # 지수 백오프
-
-
-class DocumentResult:
-    def __init__(self, text: str, total_pages: int, failed_pages: int, confidence: str):
-        self.text = text
-        self.total_pages = total_pages
-        self.failed_pages = failed_pages
-        self.confidence = confidence
 
 
 VLM_PROMPT = """이 문서 페이지의 내용을 Markdown으로 변환해.

@@ -3,8 +3,8 @@ from extractors import EXTRACTORS
 from extractors.image import prepare_image
 from extractors.pdf import extract_text, pdf_to_images
 from job_store import JobStore
-from models import ConvertResult, Job, JobStatus, Quality
-from vlm import DocumentResult, VLMClient
+from models import ConvertResult, DocumentResult, Job, JobStatus, Quality
+from vlm import VLMClient
 
 
 async def process_job(
