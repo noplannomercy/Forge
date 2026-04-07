@@ -24,3 +24,14 @@ def test_config_from_env(monkeypatch):
     assert config.vlm_model == "gpt-4o"
     assert config.vlm_timeout == 60
     assert config.vlm_concurrency == 5
+
+
+def test_config_vlm_batch_size_default():
+    config = Config()
+    assert config.vlm_batch_size == 5
+
+
+def test_config_vlm_batch_size_from_env(monkeypatch):
+    monkeypatch.setenv("VLM_BATCH_SIZE", "10")
+    config = Config()
+    assert config.vlm_batch_size == 10

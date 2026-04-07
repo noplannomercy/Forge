@@ -7,6 +7,7 @@ class Config(BaseSettings):
     vlm_api_key: str = ""
     vlm_timeout: int = 120
     vlm_concurrency: int = 3
+    vlm_batch_size: int = 5
     host: str = "0.0.0.0"
     port: int = 8003
     max_file_size: int = 104_857_600  # 100MB

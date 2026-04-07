@@ -23,6 +23,9 @@ class Quality(BaseModel):
     total_pages: int
     failed_pages: int
     confidence: str  # "high" | "partial"
+    total_batches: int = 0
+    failed_batches: int = 0
+    method: str = "extract"
 
 
 class ConvertResult(BaseModel):
@@ -40,6 +43,8 @@ class DocumentResult(BaseModel):
     total_pages: int
     failed_pages: int
     confidence: str  # "high" | "partial"
+    total_batches: int = 0
+    failed_batches: int = 0
 
 
 class Job(BaseModel):

@@ -51,3 +51,33 @@ def test_convert_result():
     )
     assert result.route == "extract"
     assert result.quality.confidence == "high"
+
+
+def test_quality_with_batch_fields():
+    q = Quality(
+        total_chars=2000, chars_per_page=400, total_pages=10,
+        failed_pages=0, confidence="high",
+        total_batches=2, failed_batches=0, method="semantic",
+    )
+    assert q.total_batches == 2
+    assert q.failed_batches == 0
+    assert q.method == "semantic"
+
+
+def test_quality_extract_method():
+    q = Quality(
+        total_chars=500, chars_per_page=500, total_pages=1,
+        failed_pages=0, confidence="high",
+        total_batches=0, failed_batches=0, method="extract",
+    )
+    assert q.method == "extract"
+
+
+def test_document_result_with_batches():
+    from models import DocumentResult
+    dr = DocumentResult(
+        text="# Title", total_pages=10, failed_pages=0,
+        confidence="high", total_batches=2, failed_batches=0,
+    )
+    assert dr.total_batches == 2
+    assert dr.failed_batches == 0
