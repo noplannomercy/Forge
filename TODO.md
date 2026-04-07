@@ -84,12 +84,11 @@ eng-review 발견사항 (플랜에 반영 완료):
 - meta.py JSON 파싱 강화 (첫{~마지막} 추출)
 - extract 경로 메타 추출 테스트 추가
 
-## v3 — 백오피스 UI + LLMOps (v3 DB 완료 후)
+## v3 — LLMOps API (v3 DB 완료 후)
 
-- [ ] **백오피스 UI** — Job 목록, 결과 미리보기, 재처리 버튼 (curl 운영 불가)
 - [ ] **LLMOps API** — 프롬프트 버전 관리, A/B 테스트, 코드 배포 없이 프롬프트 교체
-- [ ] **모니터링 대시보드** — VLM 호출 비용/지연/성공률 (forge_daily_stats + forge_vlm_logs 활용)
-- [ ] **품질 관리** — 변환 결과 평가/피드백 루프
+- [ ] **품질 관리 API** — 변환 결과 평가/피드백 루프
+- 백오피스 UI/대시보드는 Cortex 쪽 — Forge는 API만 제공
 
 eng-review defer 항목:
 - [ ] PostgreSQL 통합 테스트 (CI/CD에서 처리)
