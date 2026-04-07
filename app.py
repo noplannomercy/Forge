@@ -3,6 +3,7 @@ import logging
 from typing import List
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.responses import PlainTextResponse
 
 from config import Config
 from job_store import InMemoryJobStore, JobStore
@@ -12,10 +13,10 @@ from worker import process_job
 logger = logging.getLogger(__name__)
 
 
-async def _safe_process(job, file_bytes, route, store, config):
+async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None):
     """create_task용 래퍼. 미처리 예외를 로깅."""
     try:
-        await process_job(job, file_bytes, route, store, config)
+        await process_job(job, file_bytes, route, store, config, meta_extractor=meta_extractor)
     except Exception:
         logger.exception("Unhandled error in job %s", job.id)
 
@@ -24,10 +25,30 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     config = config or Config()
     store = store or InMemoryJobStore()
 
-    app = FastAPI(title="Forge — Document Converter", version="0.2.0")
+    app = FastAPI(title="Forge — Document Converter", version="0.3.0")
 
     app.state.store = store
     app.state.config = config
+
+    @app.on_event("startup")
+    async def startup():
+        if config.database_url:
+            import asyncpg
+            from job_store import PostgresJobStore, VLMLogStore
+            pool = await asyncpg.create_pool(config.database_url)
+            app.state.pool = pool
+            app.state.store = PostgresJobStore(pool)
+            app.state.vlm_log_store = VLMLogStore(pool)
+        # MetaExtractor singleton (works with or without DB)
+        from meta import MetaExtractor
+        app.state.meta_extractor = MetaExtractor(config)
+
+    @app.on_event("shutdown")
+    async def shutdown():
+        if hasattr(app.state, "pool"):
+            await app.state.pool.close()
+        if hasattr(app.state, "meta_extractor"):
+            await app.state.meta_extractor.close()
 
     @app.get("/health")
     async def health():
@@ -37,6 +58,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     async def convert(
         file: UploadFile = File(...),
         route: str | None = Query(None, pattern="^(extract|vlm)$"),
+        requested_by: str | None = Query(None),
     ):
         file_bytes = await file.read()
         file_name = file.filename or "unknown"
@@ -49,20 +71,37 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         except UnsupportedFormatError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        job = await store.create(file_name, source_format, detected_route)
-        asyncio.create_task(_safe_process(job, file_bytes, detected_route, store, config))
+        method = "semantic" if detected_route == "vlm" else "extract"
+        current_store = app.state.store
+        job = await current_store.create(
+            file_name, source_format, detected_route,
+            file_size=len(file_bytes), method=method, requested_by=requested_by,
+        )
+        meta_ext = getattr(app.state, "meta_extractor", None)
+        asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext))
 
         return {"job_id": job.id, "status": job.status}
 
     @app.get("/result/{job_id}")
-    async def result(job_id: str):
-        job = await store.get(job_id)
+    async def result(
+        job_id: str,
+        format: str | None = Query(None, alias="format"),
+    ):
+        current_store = app.state.store
+        job = await current_store.get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found")
+
+        if format == "text" and job.result:
+            return PlainTextResponse(
+                content=job.result.text,
+                media_type="text/markdown",
+            )
 
         return {
             "status": job.status,
             "result": job.result.model_dump() if job.result else None,
+            "meta": getattr(job, "meta", {}),
             "error": job.error,
         }
 
@@ -70,8 +109,10 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     async def batch(
         files: List[UploadFile] = File(...),
         route: str | None = Query(None, pattern="^(extract|vlm)$"),
+        requested_by: str | None = Query(None),
     ):
         jobs = []
+        current_store = app.state.store
         for file in files:
             file_bytes = await file.read()
             file_name = file.filename or "unknown"
@@ -86,8 +127,13 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
                 jobs.append({"file_name": file_name, "error": str(e)})
                 continue
 
-            job = await store.create(file_name, source_format, detected_route)
-            asyncio.create_task(_safe_process(job, file_bytes, detected_route, store, config))
+            method = "semantic" if detected_route == "vlm" else "extract"
+            job = await current_store.create(
+                file_name, source_format, detected_route,
+                file_size=len(file_bytes), method=method, requested_by=requested_by,
+            )
+            meta_ext = getattr(app.state, "meta_extractor", None)
+            asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext))
             jobs.append({"file_name": file_name, "job_id": job.id, "status": job.status})
 
         return {"jobs": jobs}

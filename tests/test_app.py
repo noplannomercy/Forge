@@ -187,3 +187,45 @@ async def test_batch_with_route_override(app):
                 ],
             )
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_convert_with_requested_by(app):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("app.process_job", new_callable=AsyncMock):
+            resp = await client.post(
+                "/convert?requested_by=cortex-api",
+                files={"file": ("test.docx", b"content", "application/octet-stream")},
+            )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "job_id" in data
+
+
+@pytest.mark.asyncio
+async def test_result_format_text(app):
+    """?format=text -> plain text 반환"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("app.process_job", new_callable=AsyncMock):
+            create_resp = await client.post(
+                "/convert",
+                files={"file": ("test.docx", b"content", "application/octet-stream")},
+            )
+        job_id = create_resp.json()["job_id"]
+
+        store = app.state.store
+        from models import ConvertResult, Quality
+        result = ConvertResult(
+            text="# Hello World", format="md", pages=1,
+            file_name="test.docx", source_format="docx", route="extract",
+            quality=Quality(total_chars=13, chars_per_page=13, total_pages=1, failed_pages=0, confidence="high"),
+        )
+        await store.save_result(job_id, result)
+
+        resp = await client.get(f"/result/{job_id}?format=text")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "text/markdown; charset=utf-8"
+    assert resp.text == "# Hello World"
