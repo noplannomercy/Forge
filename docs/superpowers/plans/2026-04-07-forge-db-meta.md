@@ -466,7 +466,7 @@ class PostgresJobStore(JobStore):
         await self._pool.execute(
             """UPDATE forge_jobs
                SET status = 'completed', result_text = $1, quality = $2,
-                   completed_at = NOW(), processing_ms = EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000
+                   completed_at = NOW(), processing_ms = EXTRACT(EPOCH FROM (NOW() - COALESCE(started_at, created_at))) * 1000
                WHERE id = $3""",
             result.text, json.dumps(result.quality.model_dump()), job_id,
         )
@@ -957,6 +957,8 @@ Expected: FAIL
 
 ```python
 # worker.py
+import logging
+
 from config import Config
 from extractors import EXTRACTORS
 from extractors.image import prepare_image
@@ -967,16 +969,27 @@ from meta import MetaExtractor
 from models import ConvertResult, DocumentResult, Job, JobStatus, Quality
 from vlm import VLMClient
 
+logger = logging.getLogger(__name__)
 
-async def _extract_meta(result_text: str, config: Config) -> dict:
-    """메타 추출. 실패 시 빈 dict 반환."""
-    extractor = MetaExtractor(config)
+PROMPT_VERSION = "semantic-v1"
+META_PROMPT_VERSION = "meta-v1"
+
+
+async def _extract_meta(result_text: str, meta_extractor: MetaExtractor | None, config: Config) -> dict:
+    """메타 추출. 실패 시 빈 dict 반환. meta_extractor가 없으면 임시 생성."""
+    extractor = meta_extractor
+    should_close = False
+    if extractor is None:
+        extractor = MetaExtractor(config)
+        should_close = True
     try:
         return await extractor.extract(result_text)
     except Exception:
+        logger.warning("Meta extraction failed for job", exc_info=True)
         return {}
     finally:
-        await extractor.close()
+        if should_close:
+            await extractor.close()
 
 
 async def process_job(
@@ -985,6 +998,7 @@ async def process_job(
     route: str,
     store: JobStore,
     config: Config,
+    meta_extractor: MetaExtractor | None = None,
 ) -> None:
     """비동기 변환 워커. asyncio.create_task로 호출됨."""
     await store.update_status(job.id, JobStatus.PROCESSING)
@@ -998,9 +1012,9 @@ async def process_job(
             await store.save_result(job.id, result)
 
             # extract 경로도 메타 추출
-            meta = await _extract_meta(result.text, config)
+            meta = await _extract_meta(result.text, meta_extractor, config)
             if hasattr(store, "save_meta") and meta:
-                await store.save_meta(job.id, meta)
+                await store.save_meta(job.id, meta, META_PROMPT_VERSION)
 
         elif route == "vlm":
             # 이미지 준비
@@ -1041,9 +1055,9 @@ async def process_job(
             await store.save_result(job.id, result)
 
             # 메타 추출
-            meta = await _extract_meta(result.text, config)
+            meta = await _extract_meta(result.text, meta_extractor, config)
             if hasattr(store, "save_meta") and meta:
-                await store.save_meta(job.id, meta)
+                await store.save_meta(job.id, meta, META_PROMPT_VERSION)
 
     except Exception as e:
         await store.save_error(job.id, str(e))
@@ -1147,10 +1161,10 @@ from worker import process_job
 logger = logging.getLogger(__name__)
 
 
-async def _safe_process(job, file_bytes, route, store, config):
+async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None):
     """create_task용 래퍼. 미처리 예외를 로깅."""
     try:
-        await process_job(job, file_bytes, route, store, config)
+        await process_job(job, file_bytes, route, store, config, meta_extractor=meta_extractor)
     except Exception:
         logger.exception("Unhandled error in job %s", job.id)
 
@@ -1163,6 +1177,26 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
 
     app.state.store = store
     app.state.config = config
+
+    @app.on_event("startup")
+    async def startup():
+        if config.database_url:
+            import asyncpg
+            from job_store import PostgresJobStore, VLMLogStore
+            pool = await asyncpg.create_pool(config.database_url)
+            app.state.pool = pool
+            app.state.store = PostgresJobStore(pool)
+            app.state.vlm_log_store = VLMLogStore(pool)
+            # MetaExtractor singleton
+            from meta import MetaExtractor
+            app.state.meta_extractor = MetaExtractor(config)
+
+    @app.on_event("shutdown")
+    async def shutdown():
+        if hasattr(app.state, "pool"):
+            await app.state.pool.close()
+        if hasattr(app.state, "meta_extractor"):
+            await app.state.meta_extractor.close()
 
     @app.get("/health")
     async def health():
@@ -1190,7 +1224,8 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             file_name, source_format, detected_route,
             file_size=len(file_bytes), method=method, requested_by=requested_by,
         )
-        asyncio.create_task(_safe_process(job, file_bytes, detected_route, store, config))
+        meta_ext = getattr(app.state, "meta_extractor", None)
+        asyncio.create_task(_safe_process(job, file_bytes, detected_route, store, config, meta_extractor=meta_ext))
 
         return {"job_id": job.id, "status": job.status}
 
@@ -1243,7 +1278,8 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
                 file_name, source_format, detected_route,
                 file_size=len(file_bytes), method=method, requested_by=requested_by,
             )
-            asyncio.create_task(_safe_process(job, file_bytes, detected_route, store, config))
+            meta_ext = getattr(app.state, "meta_extractor", None)
+        asyncio.create_task(_safe_process(job, file_bytes, detected_route, store, config, meta_extractor=meta_ext))
             jobs.append({"file_name": file_name, "job_id": job.id, "status": job.status})
 
         return {"jobs": jobs}
