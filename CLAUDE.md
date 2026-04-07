@@ -1,0 +1,109 @@
+# 작업 시작 전
+
+- 이 파일을 끝까지 읽은 뒤 작업을 시작할 것
+- `python -m pytest tests/ -v`로 현재 테스트 상태 확인 후 작업 시작
+- `.env`에 `VLM_URL`과 `VLM_MODEL`이 설정되어 있는지 확인
+
+---
+
+# 개요
+
+Forge는 다양한 포맷(PDF, DOCX, PPTX, XLSX, 이미지)을 Markdown으로 변환하는 독립 마이크로서비스다. 포맷별 최적 경로(추출 vs VLM)로 처리하며, 비동기 Job 기반으로 동작한다. Cortex(:8000)와 완전 독립, 포트 8003.
+
+---
+
+# 제약 사항
+
+| # | 규칙 | 이유 |
+|---|------|------|
+| C1 | Cortex 코드 수정 금지 | 완전 독립 서비스 원칙. Cortex 의존성 0. |
+| C2 | VLM은 이미지 기반 문서에만 사용 | 텍스트 있는 DOCX/PPTX/XLSX를 이미지화해서 VLM에 보내면 비용·시간 낭비. |
+| C3 | JobStore 인터페이스를 우회하여 Job dict에 직접 접근 금지 | Redis 전환 시 코드 변경 최소화를 위한 추상화. |
+| C4 | asyncio.create_task 호출 시 반드시 _safe_process 래퍼 사용 | fire-and-forget에서 예외가 삼켜지는 문제. 래퍼 없이 create_task 직접 호출 금지. |
+| C5 | API 키, 시크릿 하드코딩 금지 | .env 또는 환경변수 사용. config.py의 pydantic-settings로 관리. |
+
+---
+
+# 준수 사항
+
+| # | 규칙 |
+|---|------|
+| S1 | VLM 호출은 반드시 Semaphore(VLM_CONCURRENCY) 안에서 실행 |
+| S2 | VLM 호출 실패 시 3회 retry (지수 백오프 1s, 2s, 4s) 후 PageResult.error로 기록 |
+| S3 | 멀티페이지 VLM 처리 시 부분 실패 허용 — 실패 페이지는 placeholder, 성공 페이지는 보존 |
+| S4 | 모든 extractor는 `async def extract(file_bytes: bytes, file_name: str) -> ConvertResult` 시그니처 준수 |
+| S5 | 파일 업로드 시 MAX_FILE_SIZE(100MB) 초과 체크 후 413 반환 |
+
+---
+
+# 스택
+
+| 기술 | 용도 |
+|------|------|
+| Python 3.11+ | 런타임 |
+| FastAPI + uvicorn | REST API (포트 8003) |
+| httpx (async) | VLM API 호출 (OpenAI-compatible) |
+| pydantic-settings | 환경변수 관리 |
+| pypdfium2 | PDF → 이미지 변환 + 텍스트 추출 |
+| Pillow | 이미지 전처리 |
+| python-docx | DOCX → md |
+| python-pptx | PPTX → md |
+| openpyxl | XLSX → md |
+
+---
+
+# 구조
+
+| 경로 | 역할 |
+|------|------|
+| `app.py` | FastAPI 엔드포인트 (/convert, /result/{job_id}, /batch, /health) |
+| `router.py` | 포맷 감지 + 경로 결정 (extract vs vlm) |
+| `vlm.py` | VLM 클라이언트 (Semaphore + retry + 부분 실패) |
+| `job_store.py` | JobStore ABC + InMemoryJobStore |
+| `worker.py` | 비동기 변환 워커 (extract/vlm 라우팅) |
+| `config.py` | 환경변수 로드 (pydantic-settings) |
+| `models.py` | Pydantic 모델 (Job, ConvertResult, PageResult, DocumentResult, Quality) |
+| `extractors/docx.py` | DOCX 텍스트+표 → md |
+| `extractors/pptx.py` | PPTX 슬라이드별 → md |
+| `extractors/xlsx.py` | XLSX 시트별 → md 표 |
+| `extractors/pdf.py` | PDF 텍스트 추출 + 이미지 변환 |
+| `extractors/image.py` | 이미지 → VLM 전달용 PNG 변환 |
+
+---
+
+# 하네스 진화 원칙
+
+- 이 파일은 코드와 함께 진화한다. 새 제약/실패를 발견하면 즉시 반영한다.
+- 제약 사항에는 반드시 "왜 금지하는지" 이유를 적는다 (과거 사고 기반).
+- 변하는 것(진행 상태, TODO, 구현 순서)은 이 파일에 넣지 않는다. → TODO.md 참조.
+- 구조 테이블이 실제 파일과 다르면 즉시 갱신한다.
+
+---
+
+# 완료 조건
+
+```bash
+# 테스트 전체 통과
+python -m pytest tests/ -v
+# 예상: 40+ passed
+
+# 서버 기동 확인
+uvicorn app:app --port 8003
+curl http://localhost:8003/health
+# 예상: {"status":"ok"}
+
+# 린트 (설치 시)
+ruff check .
+```
+
+---
+
+# 참조 문서
+
+| 문서 | 설명 |
+|------|------|
+| docs/SRS.md | 요구사항 (21개 ID) |
+| docs/superpowers/specs/2026-04-07-forge-converter-design.md | 설계 스펙 |
+| docs/superpowers/plans/2026-04-07-forge-converter.md | 구현 플랜 (12 Task) |
+| docs/2026-04-07-document-converter-service-v2.md | office-hours 원본 설계 |
+| TODO.md | 남은 작업 + 향후 개선 목록 |
