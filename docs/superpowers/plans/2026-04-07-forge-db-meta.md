@@ -528,7 +528,7 @@ class JobStore(ABC):
     async def save_error(self, job_id: str, error: str) -> None: ...
 ```
 
-InMemoryJobStore의 `create`도 `**kwargs` 추가:
+InMemoryJobStore의 `create`도 `**kwargs` 추가, `save_meta` 추가:
 
 ```python
 async def create(self, file_name: str, source_format: str, route: str, **kwargs) -> Job:
@@ -542,6 +542,11 @@ async def create(self, file_name: str, source_format: str, route: str, **kwargs)
     )
     self._jobs[job.id] = job
     return job
+
+async def save_meta(self, job_id: str, meta: dict, meta_prompt_version: str | None = None) -> None:
+    if job_id in self._jobs:
+        self._jobs[job_id].meta = meta
+        self._jobs[job_id].meta_prompt_version = meta_prompt_version
 ```
 
 - [ ] **Step 4: 테스트 통과 확인**
@@ -738,11 +743,16 @@ class MetaExtractor:
             data = response.json()
             content = data["choices"][0]["message"]["content"]
 
-            # JSON 파싱 (```json ... ``` 래핑 처리)
+            # JSON 파싱 (다양한 LLM 응답 형식 대응)
             content = content.strip()
             if content.startswith("```"):
                 content = content.split("\n", 1)[1]
                 content = content.rsplit("```", 1)[0]
+            # 설명 텍스트 + JSON 혼합 대응: 첫 { ~ 마지막 } 추출
+            start = content.find("{")
+            end = content.rfind("}")
+            if start != -1 and end != -1:
+                content = content[start:end + 1]
 
             return json.loads(content.strip())
         except Exception:
@@ -946,6 +956,34 @@ async def test_worker_meta_failure_doesnt_fail_job(store, config):
 
     updated = await store.get(job.id)
     assert updated.status == JobStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_worker_extract_calls_meta_extraction(store, config):
+    """extract 경로도 메타 추출 호출"""
+    job = await store.create("test.docx", "docx", "extract")
+
+    mock_result = ConvertResult(
+        text="# Hello",
+        format="md",
+        pages=1,
+        file_name="test.docx",
+        source_format="docx",
+        route="extract",
+        quality=Quality(total_chars=7, chars_per_page=7, total_pages=1,
+                       failed_pages=0, confidence="high", method="extract"),
+    )
+
+    with patch("worker.EXTRACTORS", {"docx": AsyncMock(return_value=mock_result)}):
+        with patch("worker.MetaExtractor") as MockMeta:
+            mock_meta = AsyncMock()
+            mock_meta.extract = AsyncMock(return_value={"category": "문서"})
+            mock_meta.close = AsyncMock()
+            MockMeta.return_value = mock_meta
+
+            await process_job(job, b"fake", "extract", store, config)
+
+    mock_meta.extract.assert_called_once()
 ```
 
 - [ ] **Step 2: 테스트 실패 확인**
