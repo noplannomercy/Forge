@@ -84,8 +84,15 @@ eng-review 발견사항 (플랜에 반영 완료):
 - meta.py JSON 파싱 강화 (첫{~마지막} 추출)
 - extract 경로 메타 추출 테스트 추가
 
-## v3 — LLMOps API (v3 DB 완료 후)
+## v3 — 관리 API + LLMOps (v3 DB 완료 후)
 
+- [ ] **관리 API** — Cortex 백오피스가 호출할 엔드포인트
+  - `GET /jobs` — Job 목록 조회 (status, source_format, requested_by 필터 + 페이징)
+  - `GET /jobs/{id}/meta` — 메타 조회/수정
+  - `GET /stats/daily` — 일별 변환 건수/성공률/비용 (forge_daily_stats)
+  - `GET /stats/cost` — 모델별/기간별 VLM 비용 집계 (forge_vlm_logs)
+  - `POST /jobs/{id}/retry` — 재처리
+  - `DELETE /jobs/{id}` — 삭제
 - [ ] **LLMOps API** — 프롬프트 버전 관리, A/B 테스트, 코드 배포 없이 프롬프트 교체
 - [ ] **품질 관리 API** — 변환 결과 평가/피드백 루프
 - 백오피스 UI/대시보드는 Cortex 쪽 — Forge는 API만 제공
