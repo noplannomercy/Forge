@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import time
 
 import httpx
 
@@ -22,11 +23,20 @@ SEMANTIC_PROMPT = """이 문서 페이지들을 분석해서 의미 중심으로
 
 
 class BatchResult:
-    def __init__(self, batch_num: int, text: str, success: bool, error: str | None = None):
+    def __init__(
+        self, batch_num: int, text: str, success: bool,
+        error: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        latency_ms: int | None = None,
+    ):
         self.batch_num = batch_num
         self.text = text
         self.success = success
         self.error = error
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.latency_ms = latency_ms
 
 
 class VLMClient:
@@ -41,6 +51,7 @@ class VLMClient:
             last_error = None
             for attempt in range(MAX_RETRIES):
                 try:
+                    start_time = time.monotonic()
                     content = [{"type": "text", "text": SEMANTIC_PROMPT}]
                     for img in images:
                         b64 = base64.b64encode(img).decode("utf-8")
@@ -65,7 +76,14 @@ class VLMClient:
                     response.raise_for_status()
                     data = response.json()
                     text = data["choices"][0]["message"]["content"]
-                    return BatchResult(batch_num=batch_num, text=text, success=True)
+                    elapsed_ms = int((time.monotonic() - start_time) * 1000)
+                    usage = data.get("usage", {})
+                    return BatchResult(
+                        batch_num=batch_num, text=text, success=True,
+                        input_tokens=usage.get("prompt_tokens"),
+                        output_tokens=usage.get("completion_tokens"),
+                        latency_ms=elapsed_ms,
+                    )
 
                 except Exception as e:
                     last_error = e

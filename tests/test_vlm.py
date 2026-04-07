@@ -156,3 +156,38 @@ async def test_semaphore_limits_concurrent_batches(vlm_client):
 @pytest.mark.asyncio
 async def test_vlm_client_close(vlm_client):
     await vlm_client.close()
+
+
+@pytest.mark.asyncio
+async def test_process_batch_returns_usage(vlm_client):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "text"}}],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 500},
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch.object(vlm_client.client, "post", new_callable=AsyncMock, return_value=mock_response):
+        result = await vlm_client.process_batch([b"img1"], batch_num=1)
+
+    assert result.input_tokens == 1000
+    assert result.output_tokens == 500
+    assert result.latency_ms is not None
+    assert result.latency_ms >= 0
+
+
+@pytest.mark.asyncio
+async def test_process_batch_no_usage_returns_none(vlm_client):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "text"}}],
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch.object(vlm_client.client, "post", new_callable=AsyncMock, return_value=mock_response):
+        result = await vlm_client.process_batch([b"img1"], batch_num=1)
+
+    assert result.input_tokens is None
+    assert result.output_tokens is None
