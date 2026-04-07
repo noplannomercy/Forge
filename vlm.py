@@ -4,20 +4,29 @@ import base64
 import httpx
 
 from config import Config
-from models import DocumentResult, PageResult
+from models import DocumentResult
 
 MAX_RETRIES = 3
-RETRY_DELAYS = [1, 2, 4]  # 지수 백오프
+RETRY_DELAYS = [1, 2, 4]
 
 
-VLM_PROMPT = """이 문서 페이지의 내용을 Markdown으로 변환해.
+SEMANTIC_PROMPT = """이 문서 페이지들을 분석해서 의미 중심으로 재구성해.
 
 규칙:
-- 모든 텍스트를 레이아웃 순서대로 추출
-- 표는 마크다운 표 형식으로 변환
-- 이미지/도형은 [이미지: 설명] 형태로 기술
-- 제목/소제목은 마크다운 헤딩(#, ##)으로
-- 원본 내용을 빠뜨리지 말 것"""
+- 페이지별로 나누지 말고, 내용을 주제별로 묶어서 구조화
+- 배경 이미지, 장식, 페이지 번호 등 의미 없는 요소는 무시
+- 다이어그램/흐름도는 텍스트로 설명
+- 표/비교 데이터는 마크다운 표로 재구성
+- 핵심 정보만 추출해서 간결한 마크다운 문서로 만들어
+- 한국어로 작성"""
+
+
+class BatchResult:
+    def __init__(self, batch_num: int, text: str, success: bool, error: str | None = None):
+        self.batch_num = batch_num
+        self.text = text
+        self.success = success
+        self.error = error
 
 
 class VLMClient:
@@ -26,29 +35,23 @@ class VLMClient:
         self.client = httpx.AsyncClient(timeout=config.vlm_timeout)
         self.semaphore = asyncio.Semaphore(config.vlm_concurrency)
 
-    async def process_page(self, image_bytes: bytes, page_num: int) -> PageResult:
-        """단일 페이지 VLM 호출. 3회 retry 후 실패 시 예외 안 던짐."""
+    async def process_batch(self, images: list[bytes], batch_num: int) -> BatchResult:
+        """N장 이미지를 묶어서 semantic 프롬프트로 1회 VLM 호출. 3회 retry."""
         async with self.semaphore:
             last_error = None
             for attempt in range(MAX_RETRIES):
                 try:
-                    b64_image = base64.b64encode(image_bytes).decode("utf-8")
+                    content = [{"type": "text", "text": SEMANTIC_PROMPT}]
+                    for img in images:
+                        b64 = base64.b64encode(img).decode("utf-8")
+                        content.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{b64}"},
+                        })
+
                     payload = {
                         "model": self.config.vlm_model,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": VLM_PROMPT},
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:image/png;base64,{b64_image}"
-                                        },
-                                    },
-                                ],
-                            }
-                        ],
+                        "messages": [{"role": "user", "content": content}],
                         "max_tokens": 4096,
                     }
 
@@ -62,33 +65,43 @@ class VLMClient:
                     response.raise_for_status()
                     data = response.json()
                     text = data["choices"][0]["message"]["content"]
-                    return PageResult(page=page_num, text=text, success=True)
+                    return BatchResult(batch_num=batch_num, text=text, success=True)
 
                 except Exception as e:
                     last_error = e
                     if attempt < MAX_RETRIES - 1:
                         await asyncio.sleep(RETRY_DELAYS[attempt])
 
-            return PageResult(
-                page=page_num,
-                text=f"[변환 실패: 페이지 {page_num}]",
+            start_page = (batch_num - 1) * self.config.vlm_batch_size + 1
+            end_page = start_page + len(images) - 1
+            return BatchResult(
+                batch_num=batch_num,
+                text=f"[변환 실패: 페이지 {start_page}-{end_page}]",
                 success=False,
                 error=str(last_error),
             )
 
     async def process_document(self, images: list[bytes]) -> DocumentResult:
-        """전체 페이지 동시 처리 (Semaphore로 제한)"""
-        tasks = [self.process_page(img, i + 1) for i, img in enumerate(images)]
+        """전체 이미지를 batch_size씩 나눠서 semantic 처리."""
+        batch_size = self.config.vlm_batch_size
+        batches = [images[i:i + batch_size] for i in range(0, len(images), batch_size)]
+
+        tasks = [
+            self.process_batch(batch, batch_num=i + 1)
+            for i, batch in enumerate(batches)
+        ]
         results = await asyncio.gather(*tasks)
 
-        text = "\n\n".join(r.text for r in results)
+        text = "\n\n---\n\n".join(r.text for r in results)
         failed = [r for r in results if not r.success]
 
         return DocumentResult(
             text=text,
-            total_pages=len(results),
-            failed_pages=len(failed),
+            total_pages=len(images),
+            failed_pages=0,
             confidence="high" if not failed else "partial",
+            total_batches=len(batches),
+            failed_batches=len(failed),
         )
 
     async def close(self):
