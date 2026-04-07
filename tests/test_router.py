@@ -8,10 +8,34 @@ def test_docx_routes_to_extract():
     assert fmt == "docx"
 
 
-def test_pptx_routes_to_extract():
+def test_pptx_routes_to_vlm():
     route, fmt = detect_route("slides.pptx", b"dummy")
+    assert route == "vlm"
+    assert fmt == "pptx"
+
+
+def test_route_override_forces_vlm():
+    route, fmt = detect_route("report.docx", b"dummy", route_override="vlm")
+    assert route == "vlm"
+    assert fmt == "docx"
+
+
+def test_route_override_forces_extract():
+    route, fmt = detect_route("slides.pptx", b"dummy", route_override="extract")
     assert route == "extract"
     assert fmt == "pptx"
+
+
+def test_route_override_forces_extract_on_image():
+    route, fmt = detect_route("photo.png", b"dummy", route_override="extract")
+    assert route == "extract"
+    assert fmt == "png"
+
+
+def test_route_override_none_uses_default():
+    route, fmt = detect_route("data.xlsx", b"dummy", route_override=None)
+    assert route == "extract"
+    assert fmt == "xlsx"
 
 
 def test_xlsx_routes_to_extract():

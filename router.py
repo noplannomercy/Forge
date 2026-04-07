@@ -7,8 +7,8 @@ class UnsupportedFormatError(Exception):
     pass
 
 
-EXTRACT_FORMATS = {".docx", ".pptx", ".xlsx"}
-VLM_FORMATS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp"}
+EXTRACT_FORMATS = {".docx", ".xlsx"}
+VLM_FORMATS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".pptx"}
 
 
 def try_extract_pdf_text(file_bytes: bytes) -> float:
@@ -31,20 +31,30 @@ def try_extract_pdf_text(file_bytes: bytes) -> float:
         return 0
 
 
-def detect_route(file_name: str, file_bytes: bytes) -> tuple[str, str]:
+def detect_route(file_name: str, file_bytes: bytes, route_override: str | None = None) -> tuple[str, str]:
     """파일명과 바이트로 처리 경로 결정. (route, source_format) 반환."""
     ext = Path(file_name).suffix.lower()
 
     if ext in EXTRACT_FORMATS:
-        return ("extract", ext[1:])
+        fmt = ext[1:]
+    elif ext in VLM_FORMATS:
+        fmt = ext[1:]
+    elif ext == ".pdf":
+        fmt = "pdf"
+    else:
+        raise UnsupportedFormatError(f"Unsupported format: {ext}")
+
+    if route_override in ("extract", "vlm"):
+        return (route_override, fmt)
+
+    if ext in EXTRACT_FORMATS:
+        return ("extract", fmt)
 
     if ext in VLM_FORMATS:
-        return ("vlm", ext[1:])
+        return ("vlm", fmt)
 
-    if ext == ".pdf":
-        chars_per_mb = try_extract_pdf_text(file_bytes)
-        if chars_per_mb < 100:
-            return ("vlm", "pdf")
-        return ("extract", "pdf")
-
-    raise UnsupportedFormatError(f"Unsupported format: {ext}")
+    # PDF auto-detection
+    chars_per_mb = try_extract_pdf_text(file_bytes)
+    if chars_per_mb < 100:
+        return ("vlm", "pdf")
+    return ("extract", "pdf")
