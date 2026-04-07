@@ -1,7 +1,23 @@
 import asyncio
 import os
 import shutil
+import sys
 import tempfile
+
+
+def _find_soffice() -> str:
+    """soffice 실행 파일 경로 탐색"""
+    if shutil.which("soffice"):
+        return "soffice"
+    # Windows 기본 설치 경로
+    if sys.platform == "win32":
+        for path in [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        ]:
+            if os.path.isfile(path):
+                return path
+    raise FileNotFoundError("LibreOffice(soffice) not found. Install LibreOffice.")
 
 
 async def _read_and_cleanup(pdf_path: str, tmpdir: str) -> bytes:
@@ -21,8 +37,9 @@ async def pptx_to_pdf(file_bytes: bytes) -> bytes:
     with open(input_path, "wb") as f:
         f.write(file_bytes)
 
+    soffice = _find_soffice()
     process = await asyncio.create_subprocess_exec(
-        "soffice", "--headless", "--convert-to", "pdf",
+        soffice, "--headless", "--convert-to", "pdf",
         "--outdir", tmpdir, input_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

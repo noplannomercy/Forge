@@ -36,13 +36,13 @@
 > 스펙: docs/superpowers/specs/2026-04-07-forge-semantic-vlm-design.md
 > 플랜: docs/superpowers/plans/2026-04-07-forge-semantic-vlm.md
 
-- [ ] Task 1: Config + Models 확장 (vlm_batch_size, Quality 배치 필드)
-- [ ] Task 2: VLM Client semantic 배치 모드 (process_batch, 멀티 이미지)
-- [ ] Task 3: LibreOffice headless 래퍼 (PPTX→PDF)
-- [ ] Task 4: Router — PPTX→VLM + `?route=` 파라미터
-- [ ] Task 5: Worker — PPTX 파이프라인 + semantic 결과 조립
-- [ ] Task 6: API — route 쿼리 파라미터
-- [ ] Task 7: Dockerfile + 최종 검증
+- [x] Task 1: Config + Models 확장 (vlm_batch_size, Quality 배치 필드)
+- [x] Task 2: VLM Client semantic 배치 모드 (process_batch, 멀티 이미지)
+- [x] Task 3: LibreOffice headless 래퍼 (PPTX→PDF)
+- [x] Task 4: Router — PPTX→VLM + `?route=` 파라미터
+- [x] Task 5: Worker — PPTX 파이프라인 + semantic 결과 조립
+- [x] Task 6: API — route 쿼리 파라미터
+- [x] Task 7: Dockerfile + 최종 검증
 
 핵심 변경:
 - VLM 경로를 페이지별 OCR → **배치 단위 semantic 재구성**으로 교체
@@ -52,6 +52,10 @@
 
 ## v2 — 추가 개선 (semantic 이후)
 
+- [ ] **semantic 프롬프트 품질 개선** — 수동 테스트에서 도출
+  - 다이어그램 설명이 너무 단순 — 화살표 관계, 계층 구조, 인과관계 명시 필요
+  - 이미지 안 세부 텍스트 의미 파악 부족 — 모델 업그레이드(Gemini 2.5 Flash, GPT-4o) 또는 프롬프트 튜닝으로 개선
+  - 배치 간 내용 중복 발생 — 프롬프트에 "이전 배치 내용 반복 금지" 지시 추가 검토
 - [ ] **결과 다운로드 엔드포인트** — `/result/{job_id}?format=text` 또는 `/result/{job_id}/download`
   - 현재 JSON 감싸서 반환 → 마크다운 텍스트만 바로 받을 수 있어야 Cortex 연동 편함
 
