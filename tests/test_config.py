@@ -35,3 +35,22 @@ def test_config_vlm_batch_size_from_env(monkeypatch):
     monkeypatch.setenv("VLM_BATCH_SIZE", "10")
     config = Config()
     assert config.vlm_batch_size == 10
+
+
+def test_config_database_url_default():
+    config = Config()
+    assert config.database_url == ""
+
+
+def test_config_database_url_from_env(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost/forge")
+    config = Config()
+    assert config.database_url == "postgresql://user:pass@localhost/forge"
+
+
+def test_config_meta_llm_fallback():
+    """META_LLM 미설정 시 빈 문자열 (VLM fallback은 런타임에서 처리)"""
+    config = Config()
+    assert config.meta_llm_url == ""
+    assert config.meta_llm_model == ""
+    assert config.meta_llm_api_key == ""
