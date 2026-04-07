@@ -59,18 +59,18 @@
 - [ ] **결과 다운로드 엔드포인트** — `/result/{job_id}?format=text` 또는 `/result/{job_id}/download`
   - 현재 JSON 감싸서 반환 → 마크다운 텍스트만 바로 받을 수 있어야 Cortex 연동 편함
 
-## v3 — DB + LLM 메타 추출 (스펙+플랜+eng-review 완료, 구현 대기)
+## v3 — DB + LLM 메타 추출 (구현 완료 — 2026-04-08)
 
 > 스펙: docs/superpowers/specs/2026-04-07-forge-db-meta-design.md
 > 플랜: docs/superpowers/plans/2026-04-07-forge-db-meta.md
 
-- [ ] Task 1: 스키마 + Config + 의존성 (schema.sql, DATABASE_URL, META_LLM_*, asyncpg)
-- [ ] Task 2: Models 확장 (Job에 meta, requested_by, prompt_version 등)
-- [ ] Task 3: PostgresJobStore + VLMLogStore (asyncpg)
-- [ ] Task 4: MetaExtractor — LLM 메타 자동 추출 (VLM fallback)
-- [ ] Task 5: BatchResult 토큰/비용 정보 추가
-- [ ] Task 6: Worker — 메타 추출 단계 + VLM 로그 기록
-- [ ] Task 7: API — requested_by, ?format=text, DB pool lifecycle
+- [x] Task 1: 스키마 + Config + 의존성 (schema.sql, DATABASE_URL, META_LLM_*, asyncpg)
+- [x] Task 2: Models 확장 (Job에 meta, requested_by, prompt_version 등)
+- [x] Task 3: PostgresJobStore + VLMLogStore (asyncpg)
+- [x] Task 4: MetaExtractor — LLM 메타 자동 추출 (VLM fallback)
+- [x] Task 5: BatchResult 토큰/비용 정보 추가
+- [x] Task 6: Worker — 메타 추출 단계 + VLM 로그 기록
+- [x] Task 7: API — requested_by, ?format=text, DB pool lifecycle
 
 핵심:
 - Cortex PostgreSQL에 forge_ 테이블 (forge_jobs, forge_vlm_logs, forge_daily_stats view)
