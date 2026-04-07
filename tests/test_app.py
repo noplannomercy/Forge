@@ -145,3 +145,45 @@ async def test_exception_logging_wrapper(app):
             )
     assert resp.status_code == 200  # job_id는 반환됨
     await asyncio.sleep(0.1)  # background task 실행 대기
+
+
+@pytest.mark.asyncio
+async def test_convert_with_route_override(app):
+    """?route=vlm으로 DOCX도 VLM 강제"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("app.process_job", new_callable=AsyncMock):
+            resp = await client.post(
+                "/convert?route=vlm",
+                files={"file": ("test.docx", b"content", "application/octet-stream")},
+            )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_convert_with_invalid_route(app):
+    """잘못된 route 값 → 422 validation error"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/convert?route=invalid",
+            files={"file": ("test.docx", b"content", "application/octet-stream")},
+        )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_batch_with_route_override(app):
+    """batch도 route 파라미터 지원"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("app.process_job", new_callable=AsyncMock):
+            resp = await client.post(
+                "/batch?route=vlm",
+                files=[
+                    ("files", ("a.docx", b"content1", "application/octet-stream")),
+                ],
+            )
+    assert resp.status_code == 200

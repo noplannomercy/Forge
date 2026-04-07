@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import List
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 
 from config import Config
 from job_store import InMemoryJobStore, JobStore
@@ -24,7 +24,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     config = config or Config()
     store = store or InMemoryJobStore()
 
-    app = FastAPI(title="Forge — Document Converter", version="0.1.0")
+    app = FastAPI(title="Forge — Document Converter", version="0.2.0")
 
     app.state.store = store
     app.state.config = config
@@ -34,7 +34,10 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         return {"status": "ok"}
 
     @app.post("/convert")
-    async def convert(file: UploadFile = File(...)):
+    async def convert(
+        file: UploadFile = File(...),
+        route: str | None = Query(None, pattern="^(extract|vlm)$"),
+    ):
         file_bytes = await file.read()
         file_name = file.filename or "unknown"
 
@@ -42,12 +45,12 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             raise HTTPException(status_code=413, detail=f"File too large: max {config.max_file_size} bytes")
 
         try:
-            route, source_format = detect_route(file_name, file_bytes)
+            detected_route, source_format = detect_route(file_name, file_bytes, route_override=route)
         except UnsupportedFormatError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        job = await store.create(file_name, source_format, route)
-        asyncio.create_task(_safe_process(job, file_bytes, route, store, config))
+        job = await store.create(file_name, source_format, detected_route)
+        asyncio.create_task(_safe_process(job, file_bytes, detected_route, store, config))
 
         return {"job_id": job.id, "status": job.status}
 
@@ -64,7 +67,10 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         }
 
     @app.post("/batch")
-    async def batch(files: List[UploadFile] = File(...)):
+    async def batch(
+        files: List[UploadFile] = File(...),
+        route: str | None = Query(None, pattern="^(extract|vlm)$"),
+    ):
         jobs = []
         for file in files:
             file_bytes = await file.read()
@@ -75,13 +81,13 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
                 continue
 
             try:
-                route, source_format = detect_route(file_name, file_bytes)
+                detected_route, source_format = detect_route(file_name, file_bytes, route_override=route)
             except UnsupportedFormatError as e:
                 jobs.append({"file_name": file_name, "error": str(e)})
                 continue
 
-            job = await store.create(file_name, source_format, route)
-            asyncio.create_task(_safe_process(job, file_bytes, route, store, config))
+            job = await store.create(file_name, source_format, detected_route)
+            asyncio.create_task(_safe_process(job, file_bytes, detected_route, store, config))
             jobs.append({"file_name": file_name, "job_id": job.id, "status": job.status})
 
         return {"jobs": jobs}
