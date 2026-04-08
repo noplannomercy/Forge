@@ -45,6 +45,9 @@ def detect_route(file_name: str, file_bytes: bytes, route_override: str | None =
         raise UnsupportedFormatError(f"Unsupported format: {ext}")
 
     if route_override in ("extract", "vlm"):
+        # PPTX는 extract 불가 (VLM only — extractors에서 제거됨)
+        if route_override == "extract" and ext == ".pptx":
+            raise UnsupportedFormatError("PPTX는 extract 경로를 지원하지 않습니다. route=vlm을 사용하세요.")
         return (route_override, fmt)
 
     if ext in EXTRACT_FORMATS:

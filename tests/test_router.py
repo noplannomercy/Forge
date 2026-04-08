@@ -20,10 +20,16 @@ def test_route_override_forces_vlm():
     assert fmt == "docx"
 
 
-def test_route_override_forces_extract():
-    route, fmt = detect_route("slides.pptx", b"dummy", route_override="extract")
+def test_route_override_pptx_extract_raises():
+    """PPTX는 extract 강제 불가"""
+    with pytest.raises(UnsupportedFormatError, match="PPTX"):
+        detect_route("slides.pptx", b"dummy", route_override="extract")
+
+
+def test_route_override_forces_extract_on_docx():
+    route, fmt = detect_route("report.docx", b"dummy", route_override="extract")
     assert route == "extract"
-    assert fmt == "pptx"
+    assert fmt == "docx"
 
 
 def test_route_override_forces_extract_on_image():
