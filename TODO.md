@@ -119,10 +119,12 @@ v3 코드 리뷰 defer 항목:
 
 ## 향후 개선 (인프라)
 
-- [ ] Redis 기반 JobStore + Worker 분리 + 파일 스트리밍(SpooledTemporaryFile)
-  - 현재 인메모리 dict + file_bytes 전체 메모리 적재 방식
-  - 동시 요청 증가 시 메모리 압박 → Redis 전환과 파일 스트리밍을 묶어서 처리
+- [ ] **Redis Queue + Worker 분리** — Cortex Redis 도입 시점에 맞춰 진행
+  - 현재: asyncio.create_task로 같은 프로세스 내 처리 → 서버 죽으면 Job 날아감, 스케일 아웃 불가
+  - 변경: Redis Queue에 Job 넣고, 별도 Worker 프로세스에서 꺼내서 처리
   - JobStore 인터페이스 이미 분리되어 있으므로 RedisJobStore 교체만 필요
+  - 파일 스트리밍(SpooledTemporaryFile)도 같이 처리 — file_bytes 전체 메모리 적재 문제 해결
+  - Cortex Redis 인프라 공유 예정
 - [ ] HWPX 지원 (API 기반 추가)
 - [ ] hybrid route (페이지 단위 extract→VLM fallback)
 - [ ] quality gate (weighted scoring: chars_per_page + table_integrity + heading_preservation)
