@@ -131,7 +131,10 @@ class PostgresJobStore(JobStore):
         return self._row_to_job(row)
 
     async def get(self, job_id: str) -> Job | None:
-        row = await self._pool.fetchrow("SELECT * FROM forge_jobs WHERE id = $1 AND deleted_at IS NULL", job_id)
+        try:
+            row = await self._pool.fetchrow("SELECT * FROM forge_jobs WHERE id = $1 AND deleted_at IS NULL", job_id)
+        except Exception:
+            return None
         if row is None:
             return None
         return self._row_to_job(row)
@@ -222,10 +225,13 @@ class PostgresJobStore(JobStore):
         return jobs, total
 
     async def soft_delete(self, job_id: str) -> bool:
-        result = await self._pool.execute(
-            "UPDATE forge_jobs SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL", job_id,
-        )
-        return result == "UPDATE 1"
+        try:
+            result = await self._pool.execute(
+                "UPDATE forge_jobs SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL", job_id,
+            )
+            return result == "UPDATE 1"
+        except Exception:
+            return False
 
     async def update_meta(self, job_id: str, meta_patch: dict) -> dict:
         existing = await self._pool.fetchval("SELECT meta FROM forge_jobs WHERE id = $1 AND deleted_at IS NULL", job_id)
