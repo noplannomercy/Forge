@@ -117,6 +117,16 @@ v3 코드 리뷰 defer 항목:
 - [ ] VLMClient singleton화 (현재 Job당 생성, 빈도 낮아서 당장 안 급함)
 - [ ] materialized view REFRESH 전략 (cron 또는 API 호출 시)
 
+## Cortex 연동 (결정 필요 — 2026-04-08 리뷰)
+
+- [ ] **메타 추출 주체 결정** — Cortex(`metadata.py`)와 Forge(`MetaExtractor`) 둘 다 LLM 메타 추출 중. 중복 제거 필요
+  - 방안: Forge가 변환+메타 추출 → Cortex는 Forge 메타를 그대로 사용
+- [ ] **비동기 호출 방식 결정** — Forge 비동기 Job(poll) vs sync mode vs callback
+  - Cortex `ingest/file`에서 poll 루프 or Forge에 `?sync=true` or `callback_url`
+- [ ] **Cortex chunker.py에 Forge 라우팅 추가** — `FORGE_URL` 환경변수 + 포맷별 분기
+  - 연동 포인트: `cortex/core/chunker.py`, `cortex/core/ingest.py`, `cortex/config.py`
+- [ ] **Redis 동시 전환** — Cortex Phase 3 Redis 도입 시 Forge도 같이 (인프라 공유)
+
 ## 향후 개선 (인프라)
 
 - [ ] **Redis Queue + Worker 분리** — Cortex Redis 도입 시점에 맞춰 진행
