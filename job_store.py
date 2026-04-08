@@ -238,30 +238,51 @@ class PostgresJobStore(JobStore):
         )
         return current
 
+    @staticmethod
+    def _serialize_row(row) -> dict:
+        """DB row를 JSON 직렬화 가능한 dict로 변환 (Decimal→float, date→str)."""
+        from decimal import Decimal
+        from datetime import date as date_type
+        result = {}
+        for k, v in dict(row).items():
+            if isinstance(v, Decimal):
+                result[k] = float(v)
+            elif isinstance(v, date_type):
+                result[k] = str(v)
+            else:
+                result[k] = v
+        return result
+
     async def stats_daily(self, from_date: str, to_date: str) -> list[dict]:
+        from datetime import date as date_cls
+        f = date_cls.fromisoformat(from_date)
+        t = date_cls.fromisoformat(to_date)
         rows = await self._pool.fetch(
             """SELECT DATE(created_at) AS day, COUNT(*) AS total,
                       COUNT(*) FILTER (WHERE status = 'completed') AS success,
                       COUNT(*) FILTER (WHERE status = 'failed') AS failed,
                       AVG(processing_ms) AS avg_ms
                FROM forge_jobs
-               WHERE created_at >= $1::date AND created_at < $2::date + 1 AND deleted_at IS NULL
+               WHERE created_at >= $1::date AND created_at < ($2::date + interval '1 day') AND deleted_at IS NULL
                GROUP BY DATE(created_at) ORDER BY day""",
-            from_date, to_date,
+            f, t,
         )
-        return [dict(r) for r in rows]
+        return [self._serialize_row(r) for r in rows]
 
     async def stats_cost(self, from_date: str, to_date: str) -> list[dict]:
+        from datetime import date as date_cls
+        f = date_cls.fromisoformat(from_date)
+        t = date_cls.fromisoformat(to_date)
         rows = await self._pool.fetch(
             """SELECT DATE(l.created_at) AS day,
                       COALESCE(SUM(l.cost_usd), 0) AS total_cost_usd,
                       COALESCE(SUM(COALESCE(l.input_tokens, 0) + COALESCE(l.output_tokens, 0)), 0) AS total_tokens
                FROM forge_vlm_logs l JOIN forge_jobs j ON l.job_id = j.id
-               WHERE l.created_at >= $1::date AND l.created_at < $2::date + 1 AND j.deleted_at IS NULL
+               WHERE l.created_at >= $1::date AND l.created_at < ($2::date + interval '1 day') AND j.deleted_at IS NULL
                GROUP BY DATE(l.created_at) ORDER BY day""",
-            from_date, to_date,
+            f, t,
         )
-        return [dict(r) for r in rows]
+        return [self._serialize_row(r) for r in rows]
 
     async def stats_models(self) -> list[dict]:
         rows = await self._pool.fetch(
@@ -271,7 +292,7 @@ class PostgresJobStore(JobStore):
                       COALESCE(SUM(output_tokens), 0) AS total_output_tokens
                FROM forge_vlm_logs GROUP BY model ORDER BY calls DESC"""
         )
-        return [dict(r) for r in rows]
+        return [self._serialize_row(r) for r in rows]
 
 
 class VLMLogStore:
