@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from typing import List
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
@@ -25,30 +26,34 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     config = config or Config()
     store = store or InMemoryJobStore()
 
-    app = FastAPI(title="Forge — Document Converter", version="0.3.0")
-
-    app.state.store = store
-    app.state.config = config
-
-    @app.on_event("startup")
-    async def startup():
+    @asynccontextmanager
+    async def lifespan(a):
+        # startup
+        a.state.store = store
+        a.state.config = config
         if config.database_url:
             import asyncpg
             from job_store import PostgresJobStore, VLMLogStore
             pool = await asyncpg.create_pool(config.database_url)
-            app.state.pool = pool
-            app.state.store = PostgresJobStore(pool)
-            app.state.vlm_log_store = VLMLogStore(pool)
-        # MetaExtractor singleton (works with or without DB)
+            a.state.pool = pool
+            a.state.store = PostgresJobStore(pool)
+            a.state.vlm_log_store = VLMLogStore(pool)
         from meta import MetaExtractor
-        app.state.meta_extractor = MetaExtractor(config)
+        a.state.meta_extractor = MetaExtractor(config)
 
-    @app.on_event("shutdown")
-    async def shutdown():
-        if hasattr(app.state, "pool"):
-            await app.state.pool.close()
-        if hasattr(app.state, "meta_extractor"):
-            await app.state.meta_extractor.close()
+        yield
+
+        # shutdown
+        if hasattr(a.state, "pool"):
+            await a.state.pool.close()
+        if hasattr(a.state, "meta_extractor"):
+            await a.state.meta_extractor.close()
+
+    app = FastAPI(title="Forge — Document Converter", version="0.3.0", lifespan=lifespan)
+
+    # 테스트 등 lifespan 미실행 환경을 위한 기본값
+    app.state.store = store
+    app.state.config = config
 
     @app.get("/health")
     async def health():

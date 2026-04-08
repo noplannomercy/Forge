@@ -54,7 +54,7 @@ async def process_job(
 
             # extract 경로도 메타 추출
             meta = await _extract_meta(result.text, meta_extractor, config)
-            if hasattr(store, "save_meta") and meta:
+            if meta:
                 await store.save_meta(job.id, meta, META_PROMPT_VERSION)
 
         elif route == "vlm":
@@ -97,7 +97,7 @@ async def process_job(
 
             # 메타 추출
             meta = await _extract_meta(result.text, meta_extractor, config)
-            if hasattr(store, "save_meta") and meta:
+            if meta:
                 await store.save_meta(job.id, meta, META_PROMPT_VERSION)
 
     except Exception as e:

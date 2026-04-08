@@ -3,7 +3,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
-from models import ConvertResult, Job, JobStatus
+from models import ConvertResult, Job, JobStatus, Quality
 
 
 class JobStore(ABC):
@@ -21,6 +21,10 @@ class JobStore(ABC):
 
     @abstractmethod
     async def save_error(self, job_id: str, error: str) -> None: ...
+
+    async def save_meta(self, job_id: str, meta: dict, meta_prompt_version: str | None = None) -> None:
+        """기본 no-op. 구현체에서 오버라이드."""
+        pass
 
 
 class InMemoryJobStore(JobStore):
@@ -71,6 +75,22 @@ class PostgresJobStore(JobStore):
         self._pool = pool
 
     def _row_to_job(self, row: dict) -> Job:
+        # result 재구성 (DB에서 읽을 때)
+        result = None
+        if row.get("result_text") is not None:
+            quality_data = json.loads(row["quality"]) if isinstance(row["quality"], str) else (row["quality"] or {})
+            result = ConvertResult(
+                text=row["result_text"],
+                format="md",
+                pages=quality_data.get("total_pages", 0),
+                file_name=row["file_name"],
+                source_format=row["source_format"],
+                route=row["route"],
+                quality=Quality(**quality_data) if quality_data else Quality(
+                    total_chars=0, chars_per_page=0, total_pages=0, failed_pages=0, confidence="unknown",
+                ),
+            )
+
         return Job(
             id=str(row["id"]),
             status=JobStatus(row["status"]),
@@ -80,6 +100,7 @@ class PostgresJobStore(JobStore):
             route=row["route"],
             method=row.get("method", "extract"),
             requested_by=row["requested_by"],
+            result=result,
             meta=json.loads(row["meta"]) if isinstance(row["meta"], str) else (row["meta"] or {}),
             prompt_version=row["prompt_version"],
             meta_prompt_version=row["meta_prompt_version"],
