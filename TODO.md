@@ -89,11 +89,11 @@ eng-review 발견사항 (플랜에 반영 완료):
 > 스펙: docs/superpowers/specs/2026-04-08-forge-admin-api-design.md
 > 플랜: docs/superpowers/plans/2026-04-08-forge-admin-api.md
 
-- [ ] Task 1: Config + Schema (forge_api_key, deleted_at)
-- [ ] Task 2: 인증 모듈 (auth.py — X-Forge-Key)
-- [ ] Task 3: JobStore 관리 메서드 (list, soft_delete, meta merge, stats)
-- [ ] Task 4: Admin 라우터 (admin.py — 8개 엔드포인트)
-- [ ] Task 5: App 마운트 + 전체 테스트
+- [x] Task 1: Config + Schema (forge_api_key, deleted_at)
+- [x] Task 2: 인증 모듈 (auth.py — X-Forge-Key)
+- [x] Task 3: JobStore 관리 메서드 (list, soft_delete, meta merge, stats)
+- [x] Task 4: Admin 라우터 (admin.py — 8개 엔드포인트)
+- [x] Task 5: App 마운트 + 전체 테스트
 
 ## v3 — LLMOps (관리 API 완료 후)
 
