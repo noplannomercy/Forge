@@ -125,7 +125,7 @@ class PostgresJobStore(JobStore):
         return self._row_to_job(row)
 
     async def get(self, job_id: str) -> Job | None:
-        row = await self._pool.fetchrow("SELECT * FROM forge_jobs WHERE id = $1", job_id)
+        row = await self._pool.fetchrow("SELECT * FROM forge_jobs WHERE id = $1 AND deleted_at IS NULL", job_id)
         if row is None:
             return None
         return self._row_to_job(row)
@@ -165,6 +165,107 @@ class PostgresJobStore(JobStore):
                WHERE id = $2""",
             error, job_id,
         )
+
+    async def list_jobs(
+        self, page: int = 1, size: int = 20,
+        status: str | None = None, source_format: str | None = None,
+        requested_by: str | None = None,
+    ) -> tuple[list[dict], int]:
+        conditions = ["deleted_at IS NULL"]
+        params = []
+        idx = 1
+        if status:
+            conditions.append(f"status = ${idx}")
+            params.append(status)
+            idx += 1
+        if source_format:
+            conditions.append(f"source_format = ${idx}")
+            params.append(source_format)
+            idx += 1
+        if requested_by:
+            conditions.append(f"requested_by = ${idx}")
+            params.append(requested_by)
+            idx += 1
+        where = " AND ".join(conditions)
+        total = await self._pool.fetchval(f"SELECT COUNT(*) FROM forge_jobs WHERE {where}", *params)
+        offset = (page - 1) * size
+        rows = await self._pool.fetch(
+            f"""SELECT id, file_name, status, route, method, source_format,
+                       requested_by, meta, processing_ms, created_at, deleted_at
+                FROM forge_jobs WHERE {where}
+                ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}""",
+            *params, size, offset,
+        )
+        jobs = []
+        for row in rows:
+            meta = row["meta"]
+            if isinstance(meta, str):
+                meta = json.loads(meta)
+            jobs.append({
+                "id": str(row["id"]),
+                "file_name": row["file_name"],
+                "status": row["status"],
+                "route": row["route"],
+                "method": row["method"],
+                "source_format": row["source_format"],
+                "requested_by": row["requested_by"],
+                "meta": meta or {},
+                "processing_ms": row["processing_ms"],
+                "created_at": str(row["created_at"]),
+            })
+        return jobs, total
+
+    async def soft_delete(self, job_id: str) -> bool:
+        result = await self._pool.execute(
+            "UPDATE forge_jobs SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL", job_id,
+        )
+        return result == "UPDATE 1"
+
+    async def update_meta(self, job_id: str, meta_patch: dict) -> dict:
+        existing = await self._pool.fetchval("SELECT meta FROM forge_jobs WHERE id = $1", job_id)
+        if existing is None:
+            return {}
+        current = json.loads(existing) if isinstance(existing, str) else (existing or {})
+        current.update(meta_patch)
+        await self._pool.execute(
+            "UPDATE forge_jobs SET meta = $1 WHERE id = $2", json.dumps(current), job_id,
+        )
+        return current
+
+    async def stats_daily(self, from_date: str, to_date: str) -> list[dict]:
+        rows = await self._pool.fetch(
+            """SELECT DATE(created_at) AS day, COUNT(*) AS total,
+                      COUNT(*) FILTER (WHERE status = 'completed') AS success,
+                      COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+                      AVG(processing_ms) AS avg_ms
+               FROM forge_jobs
+               WHERE created_at >= $1::date AND created_at < $2::date + 1 AND deleted_at IS NULL
+               GROUP BY DATE(created_at) ORDER BY day""",
+            from_date, to_date,
+        )
+        return [dict(r) for r in rows]
+
+    async def stats_cost(self, from_date: str, to_date: str) -> list[dict]:
+        rows = await self._pool.fetch(
+            """SELECT DATE(l.created_at) AS day,
+                      COALESCE(SUM(l.cost_usd), 0) AS total_cost_usd,
+                      COALESCE(SUM(COALESCE(l.input_tokens, 0) + COALESCE(l.output_tokens, 0)), 0) AS total_tokens
+               FROM forge_vlm_logs l JOIN forge_jobs j ON l.job_id = j.id
+               WHERE l.created_at >= $1::date AND l.created_at < $2::date + 1 AND j.deleted_at IS NULL
+               GROUP BY DATE(l.created_at) ORDER BY day""",
+            from_date, to_date,
+        )
+        return [dict(r) for r in rows]
+
+    async def stats_models(self) -> list[dict]:
+        rows = await self._pool.fetch(
+            """SELECT model, COUNT(*) AS calls, AVG(latency_ms) AS avg_latency_ms,
+                      COALESCE(SUM(cost_usd), 0) AS total_cost_usd,
+                      COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
+                      COALESCE(SUM(output_tokens), 0) AS total_output_tokens
+               FROM forge_vlm_logs GROUP BY model ORDER BY calls DESC"""
+        )
+        return [dict(r) for r in rows]
 
 
 class VLMLogStore:
