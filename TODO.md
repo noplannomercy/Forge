@@ -97,7 +97,18 @@ eng-review 발견사항 (플랜에 반영 완료):
 - [ ] **품질 관리 API** — 변환 결과 평가/피드백 루프
 - 백오피스 UI/대시보드는 Cortex 쪽 — Forge는 API만 제공
 
-eng-review defer 항목:
+v3 코드 리뷰 수정 완료 (2026-04-08):
+- [x] save_meta를 JobStore ABC에 추가 (default no-op)
+- [x] PostgresJobStore._row_to_job에서 ConvertResult 재구성
+- [x] on_event deprecated → lifespan context manager 마이그레이션
+- [x] worker hasattr 제거 → ABC 계약 사용
+
+v3 코드 리뷰 defer 항목:
+- [ ] MetaExtractor retry 추가 (현재 0회, 최소 1회 추천)
+- [ ] processing_ms SQL CAST(... AS INT) 명시
+- [ ] asyncpg TYPE_CHECKING import (IDE 지원)
+- [ ] **VLMLogStore worker 연결** — 생성만 되고 실제 로그 안 쌓임 (대시보드용 데이터 없음)
+- [ ] MetaExtractor에 temperature:0 설정 (JSON 추출 일관성)
 - [ ] PostgreSQL 통합 테스트 (CI/CD에서 처리)
 - [ ] VLMClient singleton화 (현재 Job당 생성, 빈도 낮아서 당장 안 급함)
 - [ ] materialized view REFRESH 전략 (cron 또는 API 호출 시)
