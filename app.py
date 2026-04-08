@@ -62,16 +62,22 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     admin_router = create_admin_router(app.state, auth_dep)
     app.include_router(admin_router)
 
-    @app.get("/health")
+    @app.get("/health", summary="헬스체크", tags=["시스템"])
     async def health():
+        """서비스 상태 확인. `{"status": "ok"}` 반환."""
         return {"status": "ok"}
 
-    @app.post("/convert")
+    @app.post("/convert", summary="문서 변환", tags=["변환"])
     async def convert(
-        file: UploadFile = File(...),
-        route: str | None = Query(None, pattern="^(extract|vlm)$"),
-        requested_by: str | None = Query(None),
+        file: UploadFile = File(..., description="변환할 파일 (PDF, DOCX, PPTX, XLSX, 이미지)"),
+        route: str | None = Query(None, pattern="^(extract|vlm)$", description="경로 강제 지정 (extract 또는 vlm)"),
+        requested_by: str | None = Query(None, description="요청자 식별 (예: cortex-api)"),
     ):
+        """파일을 업로드하면 비동기로 변환 시작. job_id 즉시 반환.
+
+        지원 포맷: PDF, DOCX, PPTX, XLSX, JPG, PNG, TIFF, BMP.
+        PPTX/이미지PDF는 VLM semantic 모드, DOCX/XLSX/텍스트PDF는 extract 모드.
+        """
         file_bytes = await file.read()
         file_name = file.filename or "unknown"
 
@@ -95,11 +101,15 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
 
         return {"job_id": job.id, "status": job.status}
 
-    @app.get("/result/{job_id}")
+    @app.get("/result/{job_id}", summary="변환 결과 조회", tags=["변환"])
     async def result(
         job_id: str,
-        format: str | None = Query(None, alias="format"),
+        format: str | None = Query(None, alias="format", description="text로 지정 시 마크다운 plain text 반환"),
     ):
+        """변환 결과 조회. status가 completed면 result에 마크다운 + quality + meta 포함.
+
+        `?format=text` 추가 시 Content-Type: text/markdown으로 본문만 반환.
+        """
         current_store = app.state.store
         job = await current_store.get(job_id)
         if job is None:
@@ -118,12 +128,13 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             "error": job.error,
         }
 
-    @app.post("/batch")
+    @app.post("/batch", summary="배치 변환", tags=["변환"])
     async def batch(
-        files: List[UploadFile] = File(...),
-        route: str | None = Query(None, pattern="^(extract|vlm)$"),
-        requested_by: str | None = Query(None),
+        files: List[UploadFile] = File(..., description="변환할 파일 목록"),
+        route: str | None = Query(None, pattern="^(extract|vlm)$", description="경로 강제 지정"),
+        requested_by: str | None = Query(None, description="요청자 식별"),
     ):
+        """여러 파일 동시 변환. 각 파일별 job_id 리스트 반환. 미지원 포맷은 개별 에러."""
         jobs = []
         current_store = app.state.store
         for file in files:
