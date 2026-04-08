@@ -108,11 +108,11 @@ v3 코드 리뷰 수정 완료 (2026-04-08):
 - [x] worker hasattr 제거 → ABC 계약 사용
 
 v3 코드 리뷰 defer 항목:
-- [ ] MetaExtractor retry 추가 (현재 0회, 최소 1회 추천)
-- [ ] processing_ms SQL CAST(... AS INT) 명시
-- [ ] asyncpg TYPE_CHECKING import (IDE 지원)
-- [ ] **VLMLogStore worker 연결** — 생성만 되고 실제 로그 안 쌓임 (대시보드용 데이터 없음)
-- [ ] MetaExtractor에 temperature:0 설정 (JSON 추출 일관성)
+- [x] MetaExtractor retry 추가 (2회 retry + 1초 대기)
+- [x] processing_ms SQL CAST(... AS INT) 명시
+- [x] asyncpg TYPE_CHECKING import (IDE 지원)
+- [x] **VLMLogStore worker 연결** — 배치별 로그 기록
+- [x] MetaExtractor에 temperature:0 설정
 - [ ] PostgreSQL 통합 테스트 (CI/CD에서 처리)
 - [ ] VLMClient singleton화 (현재 Job당 생성, 빈도 낮아서 당장 안 급함)
 - [ ] materialized view REFRESH 전략 (cron 또는 API 호출 시)

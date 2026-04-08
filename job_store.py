@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import json
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from models import ConvertResult, Job, JobStatus, Quality
+
+if TYPE_CHECKING:
+    import asyncpg
 
 
 class JobStore(ABC):
@@ -77,7 +83,7 @@ class InMemoryJobStore(JobStore):
 
 
 class PostgresJobStore(JobStore):
-    def __init__(self, pool):
+    def __init__(self, pool: asyncpg.Pool):
         self._pool = pool
 
     def _row_to_job(self, row: dict) -> Job:
@@ -155,7 +161,7 @@ class PostgresJobStore(JobStore):
         await self._pool.execute(
             """UPDATE forge_jobs
                SET status = 'completed', result_text = $1, quality = $2,
-                   completed_at = NOW(), processing_ms = EXTRACT(EPOCH FROM (NOW() - COALESCE(started_at, created_at))) * 1000
+                   completed_at = NOW(), processing_ms = CAST(EXTRACT(EPOCH FROM (NOW() - COALESCE(started_at, created_at))) * 1000 AS INT)
                WHERE id = $3""",
             result.text, json.dumps(result.quality.model_dump()), job_id,
         )
@@ -170,7 +176,7 @@ class PostgresJobStore(JobStore):
         await self._pool.execute(
             """UPDATE forge_jobs
                SET status = 'failed', error = $1,
-                   completed_at = NOW(), processing_ms = EXTRACT(EPOCH FROM (NOW() - COALESCE(started_at, created_at))) * 1000
+                   completed_at = NOW(), processing_ms = CAST(EXTRACT(EPOCH FROM (NOW() - COALESCE(started_at, created_at))) * 1000 AS INT)
                WHERE id = $2""",
             error, job_id,
         )
@@ -302,7 +308,7 @@ class PostgresJobStore(JobStore):
 
 
 class VLMLogStore:
-    def __init__(self, pool):
+    def __init__(self, pool: asyncpg.Pool):
         self._pool = pool
 
     async def log(
