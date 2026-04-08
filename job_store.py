@@ -228,7 +228,7 @@ class PostgresJobStore(JobStore):
         return result == "UPDATE 1"
 
     async def update_meta(self, job_id: str, meta_patch: dict) -> dict:
-        existing = await self._pool.fetchval("SELECT meta FROM forge_jobs WHERE id = $1", job_id)
+        existing = await self._pool.fetchval("SELECT meta FROM forge_jobs WHERE id = $1 AND deleted_at IS NULL", job_id)
         if existing is None:
             return {}
         current = json.loads(existing) if isinstance(existing, str) else (existing or {})

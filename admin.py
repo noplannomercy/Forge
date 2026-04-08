@@ -75,7 +75,8 @@ def create_admin_router(app_state, auth_dep) -> APIRouter:
         if meta_extractor is None:
             raise HTTPException(status_code=503, detail="MetaExtractor not available")
         meta = await meta_extractor.extract(job.result.text)
-        await store.save_meta(job_id, meta)
+        from worker import META_PROMPT_VERSION
+        await store.save_meta(job_id, meta, META_PROMPT_VERSION)
         return {"meta": meta}
 
     @router.delete("/jobs/{job_id}")
