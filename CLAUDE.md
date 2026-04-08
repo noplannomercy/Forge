@@ -113,6 +113,8 @@ ruff check .
 | docs/superpowers/specs/2026-04-07-forge-db-meta-design.md | v3 DB + 메타 추출 스펙 |
 | docs/superpowers/plans/2026-04-07-forge-converter.md | v1 구현 플랜 (12 Task) |
 | docs/superpowers/plans/2026-04-07-forge-semantic-vlm.md | v2 구현 플랜 (7 Task) |
-| docs/superpowers/plans/2026-04-07-forge-db-meta.md | v3 구현 플랜 (7 Task) |
+| docs/superpowers/plans/2026-04-07-forge-db-meta.md | v3 DB 구현 플랜 (7 Task) |
+| docs/superpowers/specs/2026-04-08-forge-admin-api-design.md | v3 관리 API 스펙 |
+| docs/superpowers/plans/2026-04-08-forge-admin-api.md | v3 관리 API 플랜 (5 Task) |
 | docs/2026-04-07-document-converter-service-v2.md | office-hours 원본 설계 |
 | TODO.md | 전체 로드맵 + 진행 상태 (specs/plans의 상위 문서) |

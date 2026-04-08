@@ -84,15 +84,19 @@ eng-review 발견사항 (플랜에 반영 완료):
 - meta.py JSON 파싱 강화 (첫{~마지막} 추출)
 - extract 경로 메타 추출 테스트 추가
 
-## v3 — 관리 API + LLMOps (v3 DB 완료 후)
+## v3 — 관리 API (스펙+플랜 완료, 구현 대기)
 
-- [ ] **관리 API** — Cortex 백오피스가 호출할 엔드포인트
-  - `GET /jobs` — Job 목록 조회 (status, source_format, requested_by 필터 + 페이징)
-  - `GET /jobs/{id}/meta` — 메타 조회/수정
-  - `GET /stats/daily` — 일별 변환 건수/성공률/비용 (forge_daily_stats)
-  - `GET /stats/cost` — 모델별/기간별 VLM 비용 집계 (forge_vlm_logs)
-  - `POST /jobs/{id}/retry` — 재처리
-  - `DELETE /jobs/{id}` — 삭제
+> 스펙: docs/superpowers/specs/2026-04-08-forge-admin-api-design.md
+> 플랜: docs/superpowers/plans/2026-04-08-forge-admin-api.md
+
+- [ ] Task 1: Config + Schema (forge_api_key, deleted_at)
+- [ ] Task 2: 인증 모듈 (auth.py — X-Forge-Key)
+- [ ] Task 3: JobStore 관리 메서드 (list, soft_delete, meta merge, stats)
+- [ ] Task 4: Admin 라우터 (admin.py — 8개 엔드포인트)
+- [ ] Task 5: App 마운트 + 전체 테스트
+
+## v3 — LLMOps (관리 API 완료 후)
+
 - [ ] **LLMOps API** — 프롬프트 버전 관리, A/B 테스트, 코드 배포 없이 프롬프트 교체
 - [ ] **품질 관리 API** — 변환 결과 평가/피드백 루프
 - 백오피스 UI/대시보드는 Cortex 쪽 — Forge는 API만 제공
