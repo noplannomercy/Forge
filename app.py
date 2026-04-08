@@ -55,6 +55,13 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     app.state.store = store
     app.state.config = config
 
+    from auth import verify_api_key
+    from admin import create_admin_router
+
+    auth_dep = verify_api_key(config)
+    admin_router = create_admin_router(app.state, auth_dep)
+    app.include_router(admin_router)
+
     @app.get("/health")
     async def health():
         return {"status": "ok"}

@@ -69,6 +69,12 @@ class InMemoryJobStore(JobStore):
             job.error = error
             job.completed_at = datetime.now(timezone.utc)
 
+    async def soft_delete(self, job_id: str) -> bool:
+        if job_id in self._jobs:
+            del self._jobs[job_id]
+            return True
+        return False
+
 
 class PostgresJobStore(JobStore):
     def __init__(self, pool):
