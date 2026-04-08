@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS forge_jobs (
     started_at      TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ,
     processing_ms   INT,
-    error           TEXT
+    error           TEXT,
+    deleted_at      TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS forge_vlm_logs (
@@ -44,3 +45,6 @@ CREATE INDEX IF NOT EXISTS idx_forge_jobs_created ON forge_jobs(created_at DESC)
 CREATE INDEX IF NOT EXISTS idx_forge_jobs_requested_by ON forge_jobs(requested_by);
 CREATE INDEX IF NOT EXISTS idx_forge_vlm_logs_job ON forge_vlm_logs(job_id);
 CREATE INDEX IF NOT EXISTS idx_forge_vlm_logs_model ON forge_vlm_logs(model);
+
+-- 마이그레이션: 기존 테이블에 deleted_at 추가
+ALTER TABLE forge_jobs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;

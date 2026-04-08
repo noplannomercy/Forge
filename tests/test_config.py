@@ -54,3 +54,14 @@ def test_config_meta_llm_fallback():
     assert config.meta_llm_url == ""
     assert config.meta_llm_model == ""
     assert config.meta_llm_api_key == ""
+
+
+def test_config_forge_api_key_default():
+    config = Config()
+    assert config.forge_api_key == ""
+
+
+def test_config_forge_api_key_from_env(monkeypatch):
+    monkeypatch.setenv("FORGE_API_KEY", "my-secret-key")
+    config = Config()
+    assert config.forge_api_key == "my-secret-key"
