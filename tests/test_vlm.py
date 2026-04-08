@@ -85,13 +85,14 @@ async def test_process_document_batches_correctly(vlm_client):
     mock_response.raise_for_status = MagicMock()
 
     with patch.object(vlm_client.client, "post", new_callable=AsyncMock, return_value=mock_response):
-        result = await vlm_client.process_document([b"img"] * 9)
+        result, batch_results = await vlm_client.process_document([b"img"] * 9)
 
     assert result.total_pages == 9
     assert result.total_batches == 3
     assert result.failed_batches == 0
     assert result.confidence == "high"
     assert "batch text" in result.text
+    assert len(batch_results) == 3
 
 
 @pytest.mark.asyncio
@@ -119,7 +120,7 @@ async def test_process_document_partial_batch_failure(vlm_client):
     # Simpler approach: make ALL batches fail, check all failed
     with patch.object(vlm_client.client, "post", new_callable=AsyncMock, side_effect=Exception("timeout")):
         with patch("vlm.asyncio.sleep", new_callable=AsyncMock):
-            result = await vlm_client.process_document([b"img"] * 9)
+            result, batch_results = await vlm_client.process_document([b"img"] * 9)
 
     assert result.total_batches == 3
     assert result.failed_batches == 3

@@ -40,6 +40,7 @@ async def process_job(
     store: JobStore,
     config: Config,
     meta_extractor: MetaExtractor | None = None,
+    vlm_log_store=None,
 ) -> None:
     """비동기 변환 워커. asyncio.create_task로 호출됨."""
     await store.update_status(job.id, JobStatus.PROCESSING)
@@ -71,9 +72,23 @@ async def process_job(
             # VLM semantic 호출
             vlm_client = VLMClient(config)
             try:
-                doc_result: DocumentResult = await vlm_client.process_document(images)
+                doc_result, batch_results = await vlm_client.process_document(images)
             finally:
                 await vlm_client.close()
+
+            # VLM 로그 기록
+            if vlm_log_store:
+                for br in batch_results:
+                    try:
+                        await vlm_log_store.log(
+                            job_id=job.id, batch_num=br.batch_num, purpose="convert",
+                            model=config.vlm_model, prompt_version=PROMPT_VERSION,
+                            input_tokens=br.input_tokens, output_tokens=br.output_tokens,
+                            cost_usd=None, latency_ms=br.latency_ms,
+                            success=br.success, error=br.error,
+                        )
+                    except Exception:
+                        logger.warning("Failed to log VLM batch %d", br.batch_num, exc_info=True)
 
             result = ConvertResult(
                 text=doc_result.text,

@@ -14,10 +14,10 @@ from worker import process_job
 logger = logging.getLogger(__name__)
 
 
-async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None):
+async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None, vlm_log_store=None):
     """create_task용 래퍼. 미처리 예외를 로깅."""
     try:
-        await process_job(job, file_bytes, route, store, config, meta_extractor=meta_extractor)
+        await process_job(job, file_bytes, route, store, config, meta_extractor=meta_extractor, vlm_log_store=vlm_log_store)
     except Exception:
         logger.exception("Unhandled error in job %s", job.id)
 
@@ -90,7 +90,8 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             file_size=len(file_bytes), method=method, requested_by=requested_by,
         )
         meta_ext = getattr(app.state, "meta_extractor", None)
-        asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext))
+        vlm_logs = getattr(app.state, "vlm_log_store", None)
+        asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext, vlm_log_store=vlm_logs))
 
         return {"job_id": job.id, "status": job.status}
 

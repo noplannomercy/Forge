@@ -46,7 +46,7 @@ async def test_worker_vlm_pdf_route(store, config):
     with patch("worker.pdf_to_images", new_callable=AsyncMock, return_value=[b"img"] * 5):
         with patch("worker.VLMClient") as MockVLM:
             mock_vlm = AsyncMock()
-            mock_vlm.process_document = AsyncMock(return_value=mock_doc_result)
+            mock_vlm.process_document = AsyncMock(return_value=(mock_doc_result, []))
             mock_vlm.close = AsyncMock()
             MockVLM.return_value = mock_vlm
             with patch("worker.MetaExtractor") as MockMeta:
@@ -71,7 +71,7 @@ async def test_worker_vlm_pptx_route(store, config):
         with patch("worker.pdf_to_images", new_callable=AsyncMock, return_value=[b"img"] * 3):
             with patch("worker.VLMClient") as MockVLM:
                 mock_vlm = AsyncMock()
-                mock_vlm.process_document = AsyncMock(return_value=mock_doc_result)
+                mock_vlm.process_document = AsyncMock(return_value=(mock_doc_result, []))
                 mock_vlm.close = AsyncMock()
                 MockVLM.return_value = mock_vlm
                 with patch("worker.MetaExtractor") as MockMeta:
@@ -95,7 +95,7 @@ async def test_worker_vlm_image_route(store, config):
     with patch("worker.prepare_image", new_callable=AsyncMock, return_value=b"png_bytes"):
         with patch("worker.VLMClient") as MockVLM:
             mock_vlm = AsyncMock()
-            mock_vlm.process_document = AsyncMock(return_value=mock_doc_result)
+            mock_vlm.process_document = AsyncMock(return_value=(mock_doc_result, []))
             mock_vlm.close = AsyncMock()
             MockVLM.return_value = mock_vlm
             with patch("worker.MetaExtractor") as MockMeta:
@@ -128,7 +128,7 @@ async def test_worker_vlm_calls_meta_extraction(store, config):
     with patch("worker.pdf_to_images", new_callable=AsyncMock, return_value=[b"img"]):
         with patch("worker.VLMClient") as MockVLM:
             mock_vlm = AsyncMock()
-            mock_vlm.process_document = AsyncMock(return_value=mock_doc_result)
+            mock_vlm.process_document = AsyncMock(return_value=(mock_doc_result, []))
             mock_vlm.close = AsyncMock()
             MockVLM.return_value = mock_vlm
             with patch("worker.MetaExtractor") as MockMeta:
@@ -152,7 +152,7 @@ async def test_worker_meta_failure_doesnt_fail_job(store, config):
     with patch("worker.pdf_to_images", new_callable=AsyncMock, return_value=[b"img"]):
         with patch("worker.VLMClient") as MockVLM:
             mock_vlm = AsyncMock()
-            mock_vlm.process_document = AsyncMock(return_value=mock_doc_result)
+            mock_vlm.process_document = AsyncMock(return_value=(mock_doc_result, []))
             mock_vlm.close = AsyncMock()
             MockVLM.return_value = mock_vlm
             with patch("worker.MetaExtractor") as MockMeta:

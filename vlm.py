@@ -99,8 +99,8 @@ class VLMClient:
                 error=str(last_error),
             )
 
-    async def process_document(self, images: list[bytes]) -> DocumentResult:
-        """전체 이미지를 batch_size씩 나눠서 semantic 처리."""
+    async def process_document(self, images: list[bytes]) -> tuple[DocumentResult, list[BatchResult]]:
+        """전체 이미지를 batch_size씩 나눠서 semantic 처리. (DocumentResult, batch_results) 반환."""
         batch_size = self.config.vlm_batch_size
         batches = [images[i:i + batch_size] for i in range(0, len(images), batch_size)]
 
@@ -108,12 +108,12 @@ class VLMClient:
             self.process_batch(batch, batch_num=i + 1)
             for i, batch in enumerate(batches)
         ]
-        results = await asyncio.gather(*tasks)
+        batch_results = await asyncio.gather(*tasks)
 
-        text = "\n\n---\n\n".join(r.text for r in results)
-        failed = [r for r in results if not r.success]
+        text = "\n\n---\n\n".join(r.text for r in batch_results)
+        failed = [r for r in batch_results if not r.success]
 
-        return DocumentResult(
+        doc_result = DocumentResult(
             text=text,
             total_pages=len(images),
             failed_pages=0,
@@ -121,6 +121,7 @@ class VLMClient:
             total_batches=len(batches),
             failed_batches=len(failed),
         )
+        return doc_result, list(batch_results)
 
     async def close(self):
         await self.client.aclose()
