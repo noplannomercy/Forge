@@ -150,6 +150,7 @@ v3 코드 리뷰 defer 항목:
   - 동시 수십 건 이상 트래픽 발생 시 재검토
   - Cortex Redis와 독립 (인프라 공유는 PostgreSQL만)
 - [x] HWPX 지원 (extractors/hwpx.py — 텍스트+표 추출, 2026-04-09)
+- [ ] HWP(구형) 지원 — 바이너리 포맷, LibreOffice headless로 PDF 변환 후 VLM 경로 (PPTX 패턴)
 - [ ] hybrid route (페이지 단위 extract→VLM fallback)
 - [ ] quality gate (weighted scoring: chars_per_page + table_integrity + heading_preservation)
 - [ ] sync mode (?sync=true)
