@@ -60,6 +60,7 @@ class Job(BaseModel):
     meta: dict = Field(default_factory=dict)
     prompt_version: str | None = None
     meta_prompt_version: str | None = None
+    callback_url: str | None = None
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: datetime | None = None

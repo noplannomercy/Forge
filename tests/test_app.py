@@ -204,6 +204,20 @@ async def test_convert_with_requested_by(app):
 
 
 @pytest.mark.asyncio
+async def test_convert_with_callback_url(app):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("app.process_job", new_callable=AsyncMock):
+            resp = await client.post(
+                "/convert?callback_url=http://cortex/ingest",
+                files={"file": ("test.docx", b"content", "application/octet-stream")},
+            )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "job_id" in data
+
+
+@pytest.mark.asyncio
 async def test_result_format_text(app):
     """?format=text -> plain text 반환"""
     transport = ASGITransport(app=app)

@@ -1,4 +1,7 @@
+import asyncio
 import logging
+
+import httpx
 
 from config import Config
 from extractors import EXTRACTORS
@@ -11,6 +14,26 @@ from models import ConvertResult, DocumentResult, Job, JobStatus, Quality
 from vlm import VLMClient
 
 logger = logging.getLogger(__name__)
+
+CALLBACK_RETRIES = 3
+CALLBACK_DELAYS = [1, 2, 4]
+
+
+async def _send_callback(url: str, payload: dict) -> None:
+    """callback_url로 결과 POST. 3회 retry."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        for attempt in range(CALLBACK_RETRIES):
+            try:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                logger.info("Callback sent to %s (status %d)", url, response.status_code)
+                return
+            except Exception as e:
+                logger.warning("Callback attempt %d failed: %s", attempt + 1, e)
+                if attempt < CALLBACK_RETRIES - 1:
+                    await asyncio.sleep(CALLBACK_DELAYS[attempt])
+    logger.error("Callback failed after %d attempts: %s", CALLBACK_RETRIES, url)
+
 
 async def _extract_meta(result_text: str, meta_extractor: MetaExtractor | None, config: Config, prompts: dict | None = None) -> dict:
     """메타 추출. 실패 시 빈 dict 반환. meta_extractor가 없으면 임시 생성."""
@@ -123,3 +146,26 @@ async def process_job(
 
     except Exception as e:
         await store.save_error(job.id, str(e))
+
+    # Callback
+    if job.callback_url:
+        updated_job = await store.get(job.id)
+        if updated_job:
+            payload = {
+                "job_id": updated_job.id,
+                "status": updated_job.status,
+                "file_name": updated_job.file_name,
+                "file_size": updated_job.file_size,
+                "source_format": updated_job.source_format,
+                "route": updated_job.route,
+                "method": updated_job.method,
+                "requested_by": updated_job.requested_by,
+                "result_text": updated_job.result.text if updated_job.result else None,
+                "meta": updated_job.meta,
+                "quality": updated_job.result.quality.model_dump() if updated_job.result else None,
+                "prompt_version": updated_job.prompt_version,
+                "meta_prompt_version": updated_job.meta_prompt_version,
+                "processing_ms": updated_job.processing_ms,
+                "error": updated_job.error,
+            }
+            await _send_callback(job.callback_url, payload)

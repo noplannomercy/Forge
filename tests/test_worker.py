@@ -182,3 +182,58 @@ async def test_worker_extract_calls_meta_extraction(store, config):
             MockMeta.return_value = mock_meta
             await process_job(job, b"fake", "extract", store, config)
     mock_meta.extract.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_worker_calls_callback_on_success(store, config):
+    job = await store.create("test.docx", "docx", "extract", callback_url="http://cortex/ingest")
+    mock_result = ConvertResult(
+        text="# Hello", format="md", pages=1, file_name="test.docx",
+        source_format="docx", route="extract",
+        quality=Quality(total_chars=7, chars_per_page=7, total_pages=1,
+                       failed_pages=0, confidence="high", method="extract"),
+    )
+    with patch("worker.EXTRACTORS", {"docx": AsyncMock(return_value=mock_result)}):
+        with patch("worker.MetaExtractor") as MockMeta:
+            mock_meta = AsyncMock()
+            mock_meta.extract = AsyncMock(return_value={})
+            mock_meta.close = AsyncMock()
+            MockMeta.return_value = mock_meta
+            with patch("worker._send_callback", new_callable=AsyncMock) as mock_cb:
+                await process_job(job, b"fake", "extract", store, config)
+    mock_cb.assert_called_once()
+    call_args = mock_cb.call_args
+    assert call_args[0][0] == "http://cortex/ingest"
+    assert call_args[0][1]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_worker_calls_callback_on_failure(store, config):
+    job = await store.create("bad.docx", "docx", "extract", callback_url="http://cortex/ingest")
+    with patch("worker.EXTRACTORS", {"docx": AsyncMock(side_effect=Exception("corrupt"))}):
+        with patch("worker._send_callback", new_callable=AsyncMock) as mock_cb:
+            await process_job(job, b"bad", "extract", store, config)
+    mock_cb.assert_called_once()
+    call_args = mock_cb.call_args
+    assert call_args[0][1]["status"] == "failed"
+    assert "corrupt" in call_args[0][1]["error"]
+
+
+@pytest.mark.asyncio
+async def test_worker_no_callback_when_url_missing(store, config):
+    job = await store.create("test.docx", "docx", "extract")
+    mock_result = ConvertResult(
+        text="# Hello", format="md", pages=1, file_name="test.docx",
+        source_format="docx", route="extract",
+        quality=Quality(total_chars=7, chars_per_page=7, total_pages=1,
+                       failed_pages=0, confidence="high", method="extract"),
+    )
+    with patch("worker.EXTRACTORS", {"docx": AsyncMock(return_value=mock_result)}):
+        with patch("worker.MetaExtractor") as MockMeta:
+            mock_meta = AsyncMock()
+            mock_meta.extract = AsyncMock(return_value={})
+            mock_meta.close = AsyncMock()
+            MockMeta.return_value = mock_meta
+            with patch("worker._send_callback", new_callable=AsyncMock) as mock_cb:
+                await process_job(job, b"fake", "extract", store, config)
+    mock_cb.assert_not_called()

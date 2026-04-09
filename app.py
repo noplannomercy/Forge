@@ -91,6 +91,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         file: UploadFile = File(..., description="변환할 파일 (PDF, DOCX, PPTX, XLSX, 이미지)"),
         route: str | None = Query(None, pattern="^(extract|vlm)$", description="경로 강제 지정 (extract 또는 vlm)"),
         requested_by: str | None = Query(None, description="요청자 식별 (예: cortex-api)"),
+        callback_url: str | None = Query(None, description="완료/실패 시 결과를 POST할 URL"),
     ):
         """파일을 업로드하면 비동기로 변환 시작. job_id 즉시 반환.
 
@@ -113,6 +114,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         job = await current_store.create(
             file_name, source_format, detected_route,
             file_size=len(file_bytes), method=method, requested_by=requested_by,
+            callback_url=callback_url,
         )
         meta_ext = getattr(app.state, "meta_extractor", None)
         vlm_logs = getattr(app.state, "vlm_log_store", None)
@@ -153,6 +155,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         files: List[UploadFile] = File(..., description="변환할 파일 목록"),
         route: str | None = Query(None, pattern="^(extract|vlm)$", description="경로 강제 지정"),
         requested_by: str | None = Query(None, description="요청자 식별"),
+        callback_url: str | None = Query(None, description="완료/실패 시 결과를 POST할 URL"),
     ):
         """여러 파일 동시 변환. 각 파일별 job_id 리스트 반환. 미지원 포맷은 개별 에러."""
         jobs = []
@@ -175,6 +178,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             job = await current_store.create(
                 file_name, source_format, detected_route,
                 file_size=len(file_bytes), method=method, requested_by=requested_by,
+                callback_url=callback_url,
             )
             meta_ext = getattr(app.state, "meta_extractor", None)
             prompts_cache = getattr(app.state, "prompts", None)
