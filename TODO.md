@@ -144,12 +144,11 @@ v3 코드 리뷰 defer 항목:
 
 ## 향후 개선 (인프라)
 
-- [ ] **Redis Queue + Worker 분리** — Cortex Redis 도입 시점에 맞춰 진행
-  - 현재: asyncio.create_task로 같은 프로세스 내 처리 → 서버 죽으면 Job 날아감, 스케일 아웃 불가
-  - 변경: Redis Queue에 Job 넣고, 별도 Worker 프로세스에서 꺼내서 처리
-  - JobStore 인터페이스 이미 분리되어 있으므로 RedisJobStore 교체만 필요
-  - 파일 스트리밍(SpooledTemporaryFile)도 같이 처리 — file_bytes 전체 메모리 적재 문제 해결
-  - Cortex Redis 인프라 공유 예정
+- [ ] **Redis Queue + Worker 분리** — 보류 (2026-04-09 결정)
+  - Forge는 PostgreSQL에 이미 영속화 → Cortex와 상황 다름
+  - 인제스트 특성상 순차 처리 OK, 실시간 불필요
+  - 동시 수십 건 이상 트래픽 발생 시 재검토
+  - Cortex Redis와 독립 (인프라 공유는 PostgreSQL만)
 - [ ] HWPX 지원 (API 기반 추가)
 - [ ] hybrid route (페이지 단위 extract→VLM fallback)
 - [ ] quality gate (weighted scoring: chars_per_page + table_integrity + heading_preservation)
