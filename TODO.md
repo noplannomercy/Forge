@@ -149,7 +149,7 @@ v3 코드 리뷰 defer 항목:
   - 인제스트 특성상 순차 처리 OK, 실시간 불필요
   - 동시 수십 건 이상 트래픽 발생 시 재검토
   - Cortex Redis와 독립 (인프라 공유는 PostgreSQL만)
-- [ ] HWPX 지원 (API 기반 추가)
+- [x] HWPX 지원 (extractors/hwpx.py — 텍스트+표 추출, 2026-04-09)
 - [ ] hybrid route (페이지 단위 extract→VLM fallback)
 - [ ] quality gate (weighted scoring: chars_per_page + table_integrity + heading_preservation)
 - [ ] sync mode (?sync=true)
