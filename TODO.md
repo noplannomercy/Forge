@@ -50,12 +50,26 @@
 - `?route=extract|vlm` 파라미터로 강제 지정 가능
 - quality 메타에 total_batches/failed_batches/method 추가
 
-## v2 — 추가 개선 (semantic 이후)
+## 프롬프트 외부화 (구현 완료 — 2026-04-09)
 
-- [ ] **semantic 프롬프트 품질 개선** — 수동 테스트에서 도출
-  - 다이어그램 설명이 너무 단순 — 화살표 관계, 계층 구조, 인과관계 명시 필요
-  - 이미지 안 세부 텍스트 의미 파악 부족 — 모델 업그레이드(Gemini 2.5 Flash, GPT-4o) 또는 프롬프트 튜닝으로 개선
-  - 배치 간 내용 중복 발생 — 프롬프트에 "이전 배치 내용 반복 금지" 지시 추가 검토
+> 스펙: docs/superpowers/specs/2026-04-09-forge-prompt-externalize-design.md
+> 플랜: docs/superpowers/plans/2026-04-09-forge-prompt-externalize.md
+
+- [x] Task 1: DB 스키마 (forge_prompts)
+- [x] Task 2: PromptStore (CRUD + versioning + seed)
+- [x] Task 3: VLM + Meta 프롬프트 파라미터 주입
+- [x] Task 4: Worker 프롬프트 캐시 로드 + 버전 기록
+- [x] Task 5: Admin /prompts API (list, active, create)
+- [x] Task 6: App startup 시딩/캐시 + worker 연결
+
+다음: API로 개선된 프롬프트 v2 등록하여 품질 개선 테스트
+
+## v2 — 추가 개선
+
+- [ ] **semantic 프롬프트 v2 등록 + 품질 비교** — POST /prompts로 개선된 프롬프트 등록, before/after 비교
+  - 다이어그램: 화살표 관계, 계층 구조, 인과관계 명시
+  - 중복 방지: 이전 배치 내용 반복 금지
+  - 세부 텍스트: 이미지 안 텍스트 빠뜨리지 않기
 - [ ] **결과 다운로드 엔드포인트** — `/result/{job_id}?format=text` 또는 `/result/{job_id}/download`
   - 현재 JSON 감싸서 반환 → 마크다운 텍스트만 바로 받을 수 있어야 Cortex 연동 편함
 
