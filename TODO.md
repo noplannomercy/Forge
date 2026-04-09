@@ -134,14 +134,12 @@ v3 코드 리뷰 defer 항목:
 - [ ] VLMClient singleton화 (현재 Job당 생성, 빈도 낮아서 당장 안 급함)
 - [ ] materialized view REFRESH 전략 (cron 또는 API 호출 시)
 
-## Cortex 연동 (결정 필요 — 2026-04-08 리뷰)
+## Cortex 연동 (2026-04-09 연계 테스트 성공)
 
-- [ ] **메타 추출 주체 결정** — Cortex(`metadata.py`)와 Forge(`MetaExtractor`) 둘 다 LLM 메타 추출 중. 중복 제거 필요
-  - 방안: Forge가 변환+메타 추출 → Cortex는 Forge 메타를 그대로 사용
-- [ ] **비동기 호출 방식 결정** — Forge 비동기 Job(poll) vs sync mode vs callback
-  - Cortex `ingest/file`에서 poll 루프 or Forge에 `?sync=true` or `callback_url`
-- [ ] **Cortex chunker.py에 Forge 라우팅 추가** — `FORGE_URL` 환경변수 + 포맷별 분기
-  - 연동 포인트: `cortex/core/chunker.py`, `cortex/core/ingest.py`, `cortex/config.py`
+- [x] **callback_url** — 완료 시 Cortex /v1/ingest로 POST (pre_converted=true, X-API-Key)
+- [x] **메타 전달** — Forge meta → Cortex metadata (9개 키 merge 확인)
+- [x] **연계 테스트** — 거버 제안.docx → Forge 변환 → callback → Cortex ingest → 11 chunks
+- [ ] **Cortex chunker.py에 Forge 라우팅 추가** — Cortex가 직접 Forge 호출하는 구조 (현재는 외부에서 수동 호출)
 - [ ] **Redis 동시 전환** — Cortex Phase 3 Redis 도입 시 Forge도 같이 (인프라 공유)
 
 ## 향후 개선 (인프라)
@@ -156,10 +154,7 @@ v3 코드 리뷰 defer 항목:
 - [ ] hybrid route (페이지 단위 extract→VLM fallback)
 - [ ] quality gate (weighted scoring: chars_per_page + table_integrity + heading_preservation)
 - [ ] sync mode (?sync=true)
-- [ ] callback_url (완료 시 POST 알림)
 - [ ] Job TTL + 자동 정리
-- [ ] DELETE /jobs/{job_id} (취소)
-- [ ] POST /retry/{job_id}
 - [ ] GET /formats
 
 ## 수동 테스트 결과 (2026-04-07)
