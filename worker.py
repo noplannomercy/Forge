@@ -19,12 +19,12 @@ CALLBACK_RETRIES = 3
 CALLBACK_DELAYS = [1, 2, 4]
 
 
-async def _send_callback(url: str, payload: dict) -> None:
+async def _send_callback(url: str, payload: dict, headers: dict | None = None) -> None:
     """callback_url로 결과 POST. 3회 retry."""
     async with httpx.AsyncClient(timeout=30) as client:
         for attempt in range(CALLBACK_RETRIES):
             try:
-                response = await client.post(url, json=payload)
+                response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 logger.info("Callback sent to %s (status %d)", url, response.status_code)
                 return
@@ -147,8 +147,9 @@ async def process_job(
     except Exception as e:
         await store.save_error(job.id, str(e))
 
-    # Callback
-    if job.callback_url:
+    # Callback (callback_url은 DB가 아닌 메모리에서 전달)
+    callback_url = getattr(job, 'callback_url', None)
+    if callback_url:
         updated_job = await store.get(job.id)
         if updated_job:
             # Cortex /v1/ingest 호환 payload
@@ -164,4 +165,7 @@ async def process_job(
                 "forge_status": updated_job.status,
                 "forge_error": updated_job.error,
             }
-            await _send_callback(job.callback_url, payload)
+            cb_headers = {}
+            if config.callback_api_key:
+                cb_headers["X-API-Key"] = config.callback_api_key
+            await _send_callback(callback_url, payload, headers=cb_headers if cb_headers else None)

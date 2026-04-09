@@ -23,4 +23,7 @@ class Config(BaseSettings):
     # 관리 API 인증
     forge_api_key: str = ""
 
+    # Callback 인증 (Cortex X-API-Key)
+    callback_api_key: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

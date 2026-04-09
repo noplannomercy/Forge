@@ -114,8 +114,8 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         job = await current_store.create(
             file_name, source_format, detected_route,
             file_size=len(file_bytes), method=method, requested_by=requested_by,
-            callback_url=callback_url,
         )
+        job.callback_url = callback_url
         meta_ext = getattr(app.state, "meta_extractor", None)
         vlm_logs = getattr(app.state, "vlm_log_store", None)
         prompts_cache = getattr(app.state, "prompts", None)
@@ -178,8 +178,8 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             job = await current_store.create(
                 file_name, source_format, detected_route,
                 file_size=len(file_bytes), method=method, requested_by=requested_by,
-                callback_url=callback_url,
             )
+            job.callback_url = callback_url
             meta_ext = getattr(app.state, "meta_extractor", None)
             prompts_cache = getattr(app.state, "prompts", None)
             asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext, prompts=prompts_cache))
