@@ -156,7 +156,7 @@ async def process_job(
             payload = {
                 "content": updated_job.result.text if updated_job.result else "",
                 "file_name": updated_job.file_name,
-                "domain": "general",
+                "domain": getattr(job, "domain", None) or "general",
                 "metadata": updated_job.meta,
                 "extract": True,
                 "pre_converted": True,

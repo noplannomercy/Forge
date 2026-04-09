@@ -1,10 +1,52 @@
-.git
-.venv
+# 파이썬 빌드 아티팩트
 __pycache__
 *.pyc
-.env
+*.pyo
+*.pyd
+.Python
+*.egg-info
 .pytest_cache
-tests/
-docs/
+.mypy_cache
+.ruff_cache
+
+# 환경/비밀
+.env
+.env.*
+!.env.example
+
+# 가상환경
+venv
+.venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# 버전 관리
+.git
+.gitignore
+.gitattributes
+
+# 테스트/문서 (런타임 불필요)
+tests
+docs
+hist
 TODO.md
 CLAUDE.md
+README.md
+
+# 도커 아티팩트 (self-reference 방지)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 로그/임시
+*.log
+tmp

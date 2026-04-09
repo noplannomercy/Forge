@@ -61,6 +61,7 @@ class Job(BaseModel):
     prompt_version: str | None = None
     meta_prompt_version: str | None = None
     callback_url: str | None = None
+    domain: str = "general"
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: datetime | None = None

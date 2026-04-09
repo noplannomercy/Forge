@@ -8,7 +8,7 @@
 
 # 개요
 
-Forge는 다양한 포맷(PDF, DOCX, PPTX, XLSX, HWPX, 이미지)을 Markdown으로 변환하는 독립 마이크로서비스다. 텍스트 문서는 추출(extract), 이미지 기반 문서(PPTX, 스캔 PDF)는 VLM semantic 배치로 의미 재구성 처리. 비동기 Job 기반. Cortex(:8000)와 완전 독립, 포트 8003.
+Forge는 다양한 포맷(PDF, DOCX, PPTX, XLSX, HWPX, 이미지)을 Markdown으로 변환하는 독립 마이크로서비스다. 텍스트 문서는 추출(extract), 이미지 기반 문서(PPTX, 스캔 PDF)는 VLM semantic 배치로 의미 재구성 처리. 비동기 Job 기반. Cortex(:9000)와 완전 독립, 포트 8003. 통합 환경에서는 `hc-rag-network` 공유 (서비스명 기반 통신).
 
 ---
 
@@ -62,7 +62,10 @@ Forge는 다양한 포맷(PDF, DOCX, PPTX, XLSX, HWPX, 이미지)을 Markdown으
 | `admin.py` | 관리 API 라우터 (GET /jobs, /stats, /prompts, PATCH /meta, POST /retry, DELETE) |
 | `auth.py` | API 키 인증 dependency (X-Forge-Key) |
 | `router.py` | 포맷 감지 + 경로 결정 (extract vs vlm) + route_override 지원 |
-| `vlm.py` | VLM semantic ���치 클라이언트 (process_batch + Semaphore + retry + 외부 프롬프트 주입) |
+| `vlm.py` | VLM semantic 배치 클라이언트 (process_batch + Semaphore + retry + 외부 프롬프트 주입) |
+| `Dockerfile` | Python 3.11-slim + libreoffice-impress + non-root user + healthcheck |
+| `docker-compose.yml` | Forge 단독 개발용 (외부 DB 가정) |
+| `docker-compose.integration.yml` | Cortex + infra와 함께 `hc-rag-network` 공유 (DATABASE_URL override) |
 | `job_store.py` | JobStore ABC + InMemoryJobStore + PostgresJobStore + VLMLogStore + PromptStore |
 | `worker.py` | 비동기 변환 워커 (extract/vlm 라우팅 + PPTX→PDF + 메타 추출) |
 | `config.py` | 환경변수 로드 (VLM, VLM_BATCH_SIZE, DATABASE_URL, META_LLM_* 등) |
@@ -94,7 +97,9 @@ Forge는 다양한 포맷(PDF, DOCX, PPTX, XLSX, HWPX, 이미지)을 Markdown으
 # 테스트 전체 통과
 python -m pytest tests/ -v
 # 예상: 145+ passed (.env로 인한 config 테스트 2개 실패는 허용)
-# Cortex 연계 테스트: Forge → callback → Cortex ingest → 11 chunks 성공 (2026-04-09)
+# Cortex 연계 테스트 (2026-04-09): 거버 제안.docx + 현대케피코.docx → Cortex ingest
+#   → 2 sources / 25 chunks / 222 entities / 210 relations (hc_rag DB)
+# 도커 통합 테스트 (2026-04-09): infra + cortex + forge compose, hc-rag-network, 서비스명 통신
 # 수동 테스트: 15/15 passed (2026-04-08)
 
 # 서버 기동 확인
@@ -128,4 +133,5 @@ ruff check .
 | docs/superpowers/specs/2026-04-09-forge-hwpx-extractor-design.md | HWPX extractor 스펙 |
 | docs/superpowers/plans/2026-04-09-forge-hwpx-extractor.md | HWPX extractor 플랜 (2 Task) |
 | docs/2026-04-07-document-converter-service-v2.md | office-hours 원본 설계 |
+| docs/DEPLOYMENT.md | 배포/운영 매뉴얼 (로컬/도커/AWS, 환경변수, 트러블슈팅) |
 | TODO.md | 전체 로드맵 + 진행 상태 (specs/plans의 상위 문서) |

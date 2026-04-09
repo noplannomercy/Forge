@@ -1,0 +1,44 @@
+# Forge integration compose — Cortex + infra 와 같은 네트워크 공유.
+#
+# 전제:
+#   1. docker network create hc-rag-network (한 번만)
+#   2. infra compose 먼저 기동 (Postgres + Redis)
+#   3. Cortex compose 기동
+#   4. Forge compose (이 파일) 기동
+#
+# 기동:
+#   docker compose -f docker-compose.integration.yml up -d
+#
+# 환경:
+#   .env 파일은 integration 모드 DATABASE_URL 사용:
+#     DATABASE_URL=postgresql://hc:hc_dev@postgres:5432/hc_rag
+#
+# 참고:
+#   hc-rag-network 는 external network. infra compose가 postgres/redis를 같은 네트워크에 붙임.
+#   Forge는 서비스명(postgres) 으로 접근.
+
+services:
+  forge:
+    build: .
+    image: forge:latest
+    container_name: forge
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    environment:
+      # infra compose의 Postgres 서비스명 사용 (로컬 .env의 DATABASE_URL 오버라이드)
+      DATABASE_URL: postgresql://hc:hc_dev@postgres:5432/hc_rag
+    networks:
+      - hc-rag-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  hc-rag-network:
+    external: true

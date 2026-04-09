@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import List
 
@@ -12,6 +13,20 @@ from router import UnsupportedFormatError, detect_route
 from worker import process_job
 
 logger = logging.getLogger(__name__)
+
+SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
+
+
+async def _apply_schema(pool) -> None:
+    """schema.sql을 startup 시 적용. 모든 DDL이 IF NOT EXISTS라 idempotent."""
+    if not os.path.isfile(SCHEMA_PATH):
+        logger.warning("schema.sql not found at %s, skipping auto-apply", SCHEMA_PATH)
+        return
+    with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+        ddl = f.read()
+    async with pool.acquire() as conn:
+        await conn.execute(ddl)
+    logger.info("schema.sql applied successfully")
 
 
 async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None, vlm_log_store=None, prompts=None):
@@ -38,6 +53,10 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             from meta import META_PROMPT
             pool = await asyncpg.create_pool(config.database_url)
             a.state.pool = pool
+
+            # 스키마 자동 적용 (Cortex DB 공유 환경에서도 forge_ 테이블만 생성)
+            await _apply_schema(pool)
+
             a.state.store = PostgresJobStore(pool)
             a.state.vlm_log_store = VLMLogStore(pool)
             a.state.prompt_store = PromptStore(pool)
@@ -92,6 +111,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         route: str | None = Query(None, pattern="^(extract|vlm)$", description="경로 강제 지정 (extract 또는 vlm)"),
         requested_by: str | None = Query(None, description="요청자 식별 (예: cortex-api)"),
         callback_url: str | None = Query(None, description="완료/실패 시 결과를 POST할 URL"),
+        domain: str = Query("general", description="문서 도메인 (callback payload에 포함, Cortex 인덱싱 분류용)"),
     ):
         """파일을 업로드하면 비동기로 변환 시작. job_id 즉시 반환.
 
@@ -116,6 +136,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             file_size=len(file_bytes), method=method, requested_by=requested_by,
         )
         job.callback_url = callback_url
+        job.domain = domain
         meta_ext = getattr(app.state, "meta_extractor", None)
         vlm_logs = getattr(app.state, "vlm_log_store", None)
         prompts_cache = getattr(app.state, "prompts", None)
@@ -156,6 +177,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         route: str | None = Query(None, pattern="^(extract|vlm)$", description="경로 강제 지정"),
         requested_by: str | None = Query(None, description="요청자 식별"),
         callback_url: str | None = Query(None, description="완료/실패 시 결과를 POST할 URL"),
+        domain: str = Query("general", description="문서 도메인 (callback payload에 포함)"),
     ):
         """여러 파일 동시 변환. 각 파일별 job_id 리스트 반환. 미지원 포맷은 개별 에러."""
         jobs = []
@@ -180,6 +202,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
                 file_size=len(file_bytes), method=method, requested_by=requested_by,
             )
             job.callback_url = callback_url
+            job.domain = domain
             meta_ext = getattr(app.state, "meta_extractor", None)
             prompts_cache = getattr(app.state, "prompts", None)
             asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext, prompts=prompts_cache))

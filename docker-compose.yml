@@ -1,0 +1,29 @@
+# Forge 단독 개발용 compose.
+# - 외부 DB(Postgres)가 이미 떠있는 상황을 가정 (DATABASE_URL .env에 세팅).
+# - Cortex와 통합하려면 docker-compose.integration.yml 사용.
+#
+# 기동:
+#   docker compose up -d
+#
+# 로그:
+#   docker compose logs -f forge
+#
+# 정리:
+#   docker compose down
+
+services:
+  forge:
+    build: .
+    image: forge:latest
+    container_name: forge
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

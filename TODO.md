@@ -139,7 +139,13 @@ v3 코드 리뷰 defer 항목:
 - [x] **callback_url** — 완료 시 Cortex /v1/ingest로 POST (pre_converted=true, X-API-Key)
 - [x] **메타 전달** — Forge meta → Cortex metadata (9개 키 merge 확인)
 - [x] **연계 테스트** — 거버 제안.docx → Forge 변환 → callback → Cortex ingest → 11 chunks
-- [ ] **Cortex chunker.py에 Forge 라우팅 추가** — Cortex가 직접 Forge 호출하는 구조 (현재는 외부에서 수동 호출)
+- [x] **Cortex chunker.py에 Forge 라우팅 추가** — 2026-04-09 Cortex `/v1/ingest/file` → Forge `/convert` 자동 위임 완료
+- [x] **Docker 통합 환경 구축** — 2026-04-09 완료
+  - infra compose (Postgres pgvector+AGE + Redis, `hc-rag-network`)
+  - Cortex + Forge 각자 단독 compose + integration compose 2벌
+  - 서비스명 기반 통신 (`cortex:9000 ↔ forge:8003`)
+  - startup schema auto-apply 양쪽 다 동작
+  - End-to-end 검증: 거버제안.docx (11 chunks) + 현대케피코.docx (14 chunks), 총 25 chunks / 222 entities / 210 relations
 - [ ] **Redis 동시 전환** — Cortex Phase 3 Redis 도입 시 Forge도 같이 (인프라 공유)
 
 ## 향후 개선 (인프라)
@@ -149,6 +155,12 @@ v3 코드 리뷰 defer 항목:
   - 인제스트 특성상 순차 처리 OK, 실시간 불필요
   - 동시 수십 건 이상 트래픽 발생 시 재검토
   - Cortex Redis와 독립 (인프라 공유는 PostgreSQL만)
+- [x] **배포/운영 매뉴얼 작성** — 2026-04-09 완료 → `docs/DEPLOYMENT.md`
+  - 아키텍처 개요, 3가지 실행 모드 (로컬/Docker 단독/Docker integration)
+  - 환경변수 체크리스트, Cortex 연동 URL 매트릭스
+  - DB 스키마 관리 방식 (startup auto-apply)
+  - 하드코딩 튜닝 포인트, AWS 이관 시나리오
+  - 트러블슈팅, 배포 전 체크리스트
 - [x] HWPX 지원 (extractors/hwpx.py — 텍스트+표 추출, 2026-04-09)
 - [ ] HWP(구형) 지원 — 바이너리 포맷, LibreOffice headless로 PDF 변환 후 VLM 경로 (PPTX 패턴)
 - [ ] hybrid route (페이지 단위 extract→VLM fallback)
