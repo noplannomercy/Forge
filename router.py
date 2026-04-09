@@ -7,7 +7,7 @@ class UnsupportedFormatError(Exception):
     pass
 
 
-EXTRACT_FORMATS = {".docx", ".xlsx"}
+EXTRACT_FORMATS = {".docx", ".xlsx", ".hwpx"}
 VLM_FORMATS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".pptx"}
 
 

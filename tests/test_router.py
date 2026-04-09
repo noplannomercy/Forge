@@ -86,6 +86,12 @@ def test_unsupported_format_raises():
     assert ".xyz" in str(exc_info.value)
 
 
+def test_hwpx_routes_to_extract():
+    route, fmt = detect_route("문서.hwpx", b"dummy")
+    assert route == "extract"
+    assert fmt == "hwpx"
+
+
 def test_case_insensitive():
     route, fmt = detect_route("REPORT.DOCX", b"dummy")
     assert route == "extract"
