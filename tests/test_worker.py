@@ -204,7 +204,9 @@ async def test_worker_calls_callback_on_success(store, config):
     mock_cb.assert_called_once()
     call_args = mock_cb.call_args
     assert call_args[0][0] == "http://cortex/ingest"
-    assert call_args[0][1]["status"] == "completed"
+    assert call_args[0][1]["content"] == "# Hello"
+    assert call_args[0][1]["file_name"] == "test.docx"
+    assert call_args[0][1]["forge_status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -215,8 +217,8 @@ async def test_worker_calls_callback_on_failure(store, config):
             await process_job(job, b"bad", "extract", store, config)
     mock_cb.assert_called_once()
     call_args = mock_cb.call_args
-    assert call_args[0][1]["status"] == "failed"
-    assert "corrupt" in call_args[0][1]["error"]
+    assert call_args[0][1]["forge_status"] == "failed"
+    assert "corrupt" in call_args[0][1]["forge_error"]
 
 
 @pytest.mark.asyncio

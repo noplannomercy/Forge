@@ -151,21 +151,16 @@ async def process_job(
     if job.callback_url:
         updated_job = await store.get(job.id)
         if updated_job:
+            # Cortex /v1/ingest 호환 payload
             payload = {
-                "job_id": updated_job.id,
-                "status": updated_job.status,
+                "content": updated_job.result.text if updated_job.result else "",
                 "file_name": updated_job.file_name,
-                "file_size": updated_job.file_size,
-                "source_format": updated_job.source_format,
-                "route": updated_job.route,
-                "method": updated_job.method,
-                "requested_by": updated_job.requested_by,
-                "result_text": updated_job.result.text if updated_job.result else None,
-                "meta": updated_job.meta,
-                "quality": updated_job.result.quality.model_dump() if updated_job.result else None,
-                "prompt_version": updated_job.prompt_version,
-                "meta_prompt_version": updated_job.meta_prompt_version,
-                "processing_ms": updated_job.processing_ms,
-                "error": updated_job.error,
+                "domain": "general",
+                "metadata": updated_job.meta,
+                "extract": True,
+                # Forge 추적용 (Cortex에서 무시해도 됨)
+                "forge_job_id": updated_job.id,
+                "forge_status": updated_job.status,
+                "forge_error": updated_job.error,
             }
             await _send_callback(job.callback_url, payload)
