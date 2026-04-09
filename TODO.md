@@ -62,13 +62,15 @@
 - [x] Task 5: Admin /prompts API (list, active, create)
 - [x] Task 6: App startup 시딩/캐시 + worker 연결
 
-다음: API로 개선된 프롬프트 v2 등록하여 품질 개선 테스트
+- [x] semantic v2 프롬프트 등록 + 품질 비교 완료 (52k→64k, +22.7%)
+
+## 향후 — 프롬프트 고도화
+
+- [ ] **문서 종류별 프롬프트 분기** — 제안서/기술문서/재무보고서 등 종류에 따라 다른 프롬프트
+  - 필요: 문서 종류 판별 로직 + prompt_type 확장 + 매핑 테이블 + 로깅
+  - 선행 조건: 품질 평가 체계 + LLMOps 완성 후
 
 ## v2 — 추가 개선
-
-- [ ] **semantic 프롬프트 v2 등록 + 품질 비교** — POST /prompts로 개선된 프롬프트 등록, before/after 비교
-  - 다이어그램: 화살표 관계, 계층 구조, 인과관계 명시
-  - 중복 방지: 이전 배치 내용 반복 금지
   - 세부 텍스트: 이미지 안 텍스트 빠뜨리지 않기
 - [ ] **결과 다운로드 엔드포인트** — `/result/{job_id}?format=text` 또는 `/result/{job_id}/download`
   - 현재 JSON 감싸서 반환 → 마크다운 텍스트만 바로 받을 수 있어야 Cortex 연동 편함
