@@ -14,10 +14,10 @@ from worker import process_job
 logger = logging.getLogger(__name__)
 
 
-async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None, vlm_log_store=None):
+async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None, vlm_log_store=None, prompts=None):
     """create_task용 래퍼. 미처리 예외를 로깅."""
     try:
-        await process_job(job, file_bytes, route, store, config, meta_extractor=meta_extractor, vlm_log_store=vlm_log_store)
+        await process_job(job, file_bytes, route, store, config, meta_extractor=meta_extractor, vlm_log_store=vlm_log_store, prompts=prompts)
     except Exception:
         logger.exception("Unhandled error in job %s", job.id)
 
@@ -33,13 +33,32 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         a.state.config = config
         if config.database_url:
             import asyncpg
-            from job_store import PostgresJobStore, VLMLogStore
+            from job_store import PostgresJobStore, VLMLogStore, PromptStore
+            from vlm import SEMANTIC_PROMPT
+            from meta import META_PROMPT
             pool = await asyncpg.create_pool(config.database_url)
             a.state.pool = pool
             a.state.store = PostgresJobStore(pool)
             a.state.vlm_log_store = VLMLogStore(pool)
-        from meta import MetaExtractor
-        a.state.meta_extractor = MetaExtractor(config)
+            a.state.prompt_store = PromptStore(pool)
+            await a.state.prompt_store.seed_if_empty("semantic", SEMANTIC_PROMPT)
+            await a.state.prompt_store.seed_if_empty("meta_extract", META_PROMPT)
+
+            # Load active prompts into cache
+            semantic = await a.state.prompt_store.get_active("semantic")
+            meta_p = await a.state.prompt_store.get_active("meta_extract")
+            a.state.prompts = {
+                "semantic": {"text": semantic["text"], "version": semantic["version"]} if semantic else {},
+                "meta_extract": {"text": meta_p["text"], "version": meta_p["version"]} if meta_p else {},
+            }
+
+            # MetaExtractor with DB prompt
+            from meta import MetaExtractor
+            meta_prompt_text = a.state.prompts.get("meta_extract", {}).get("text")
+            a.state.meta_extractor = MetaExtractor(config, prompt=meta_prompt_text)
+        else:
+            from meta import MetaExtractor
+            a.state.meta_extractor = MetaExtractor(config)
 
         yield
 
@@ -97,7 +116,8 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         )
         meta_ext = getattr(app.state, "meta_extractor", None)
         vlm_logs = getattr(app.state, "vlm_log_store", None)
-        asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext, vlm_log_store=vlm_logs))
+        prompts_cache = getattr(app.state, "prompts", None)
+        asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext, vlm_log_store=vlm_logs, prompts=prompts_cache))
 
         return {"job_id": job.id, "status": job.status}
 
@@ -157,7 +177,8 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
                 file_size=len(file_bytes), method=method, requested_by=requested_by,
             )
             meta_ext = getattr(app.state, "meta_extractor", None)
-            asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext))
+            prompts_cache = getattr(app.state, "prompts", None)
+            asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext, prompts=prompts_cache))
             jobs.append({"file_name": file_name, "job_id": job.id, "status": job.status})
 
         return {"jobs": jobs}

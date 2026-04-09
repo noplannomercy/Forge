@@ -79,8 +79,10 @@ def create_admin_router(app_state, auth_dep) -> APIRouter:
         if meta_extractor is None:
             raise HTTPException(status_code=503, detail="MetaExtractor not available")
         meta = await meta_extractor.extract(job.result.text)
-        from worker import META_PROMPT_VERSION
-        await store.save_meta(job_id, meta, META_PROMPT_VERSION)
+        prompts = getattr(app_state, "prompts", None)
+        meta_prompt_info = prompts.get("meta_extract", {}) if prompts else {}
+        meta_ver = f"meta_extract-v{meta_prompt_info.get('version', '?')}" if meta_prompt_info else "meta_extract-v?"
+        await store.save_meta(job_id, meta, meta_ver)
         return {"meta": meta}
 
     @router.delete("/jobs/{job_id}", summary="Job 삭제 (soft delete)")
@@ -131,5 +133,43 @@ def create_admin_router(app_state, auth_dep) -> APIRouter:
             raise HTTPException(status_code=501, detail="stats not supported")
         stats = await store.stats_models()
         return {"models": stats}
+
+    @router.get("/prompts", summary="프롬프트 전체 목록", tags=["프롬프트"])
+    async def list_prompts():
+        """전체 프롬프트 버전 이력."""
+        prompt_store = getattr(app_state, "prompt_store", None)
+        if prompt_store is None:
+            raise HTTPException(status_code=501, detail="PromptStore not available")
+        prompts = await prompt_store.list_all()
+        return {"prompts": prompts}
+
+    @router.get("/prompts/{prompt_type}/active", summary="활성 프롬프트 조회", tags=["프롬프트"])
+    async def get_active_prompt(prompt_type: str):
+        """현재 활성 프롬프트. type: semantic 또는 meta_extract."""
+        prompt_store = getattr(app_state, "prompt_store", None)
+        if prompt_store is None:
+            raise HTTPException(status_code=501, detail="PromptStore not available")
+        prompt = await prompt_store.get_active(prompt_type)
+        if prompt is None:
+            raise HTTPException(status_code=404, detail=f"No active prompt for type: {prompt_type}")
+        return prompt
+
+    @router.post("/prompts", summary="새 프롬프트 버전 등록", tags=["프롬프트"])
+    async def create_prompt(body: dict):
+        """새 프롬프트 등록. 기존 활성 버전 비활성화. body: {type, text}"""
+        prompt_store = getattr(app_state, "prompt_store", None)
+        if prompt_store is None:
+            raise HTTPException(status_code=501, detail="PromptStore not available")
+        prompt_type = body.get("type")
+        text = body.get("text")
+        if prompt_type not in ("semantic", "meta_extract"):
+            raise HTTPException(status_code=400, detail="type must be 'semantic' or 'meta_extract'")
+        if not text:
+            raise HTTPException(status_code=400, detail="text is required")
+        result = await prompt_store.create_version(prompt_type, text)
+        # 메모리 캐시 갱신
+        if hasattr(app_state, "prompts"):
+            app_state.prompts[prompt_type] = {"text": result["text"], "version": result["version"]}
+        return result
 
     return router

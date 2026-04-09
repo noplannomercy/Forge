@@ -12,16 +12,14 @@ from vlm import VLMClient
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "semantic-v1"
-META_PROMPT_VERSION = "meta-v1"
-
-
-async def _extract_meta(result_text: str, meta_extractor: MetaExtractor | None, config: Config) -> dict:
+async def _extract_meta(result_text: str, meta_extractor: MetaExtractor | None, config: Config, prompts: dict | None = None) -> dict:
     """메타 추출. 실패 시 빈 dict 반환. meta_extractor가 없으면 임시 생성."""
     extractor = meta_extractor
     should_close = False
     if extractor is None:
-        extractor = MetaExtractor(config)
+        meta_prompt_info = prompts.get("meta_extract", {}) if prompts else {}
+        meta_text = meta_prompt_info.get("text")
+        extractor = MetaExtractor(config, prompt=meta_text)
         should_close = True
     try:
         return await extractor.extract(result_text)
@@ -41,6 +39,7 @@ async def process_job(
     config: Config,
     meta_extractor: MetaExtractor | None = None,
     vlm_log_store=None,
+    prompts: dict | None = None,
 ) -> None:
     """비동기 변환 워커. asyncio.create_task로 호출됨."""
     await store.update_status(job.id, JobStatus.PROCESSING)
@@ -54,9 +53,11 @@ async def process_job(
             await store.save_result(job.id, result)
 
             # extract 경로도 메타 추출
-            meta = await _extract_meta(result.text, meta_extractor, config)
+            meta_prompt_info = prompts.get("meta_extract", {}) if prompts else {}
+            meta_ver = f"meta_extract-v{meta_prompt_info.get('version', '?')}" if meta_prompt_info else "meta_extract-v?"
+            meta = await _extract_meta(result.text, meta_extractor, config, prompts=prompts)
             if meta:
-                await store.save_meta(job.id, meta, META_PROMPT_VERSION)
+                await store.save_meta(job.id, meta, meta_ver)
 
         elif route == "vlm":
             # 이미지 준비
@@ -70,7 +71,10 @@ async def process_job(
                 images = [img_bytes]
 
             # VLM semantic 호출
-            vlm_client = VLMClient(config)
+            semantic_prompt = prompts.get("semantic", {}) if prompts else {}
+            prompt_text = semantic_prompt.get("text")
+            prompt_ver = f"semantic-v{semantic_prompt.get('version', '?')}" if semantic_prompt else "semantic-v?"
+            vlm_client = VLMClient(config, prompt=prompt_text)
             try:
                 doc_result, batch_results = await vlm_client.process_document(images)
             finally:
@@ -82,7 +86,7 @@ async def process_job(
                     try:
                         await vlm_log_store.log(
                             job_id=job.id, batch_num=br.batch_num, purpose="convert",
-                            model=config.vlm_model, prompt_version=PROMPT_VERSION,
+                            model=config.vlm_model, prompt_version=prompt_ver,
                             input_tokens=br.input_tokens, output_tokens=br.output_tokens,
                             cost_usd=None, latency_ms=br.latency_ms,
                             success=br.success, error=br.error,
@@ -111,9 +115,11 @@ async def process_job(
             await store.save_result(job.id, result)
 
             # 메타 추출
-            meta = await _extract_meta(result.text, meta_extractor, config)
+            meta_prompt_info = prompts.get("meta_extract", {}) if prompts else {}
+            meta_ver = f"meta_extract-v{meta_prompt_info.get('version', '?')}" if meta_prompt_info else "meta_extract-v?"
+            meta = await _extract_meta(result.text, meta_extractor, config, prompts=prompts)
             if meta:
-                await store.save_meta(job.id, meta, META_PROMPT_VERSION)
+                await store.save_meta(job.id, meta, meta_ver)
 
     except Exception as e:
         await store.save_error(job.id, str(e))
