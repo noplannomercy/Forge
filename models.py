@@ -22,7 +22,7 @@ class Quality(BaseModel):
     chars_per_page: float
     total_pages: int
     failed_pages: int
-    confidence: str  # "high" | "partial"
+    confidence: str  # "high" | "partial" | "low"
     total_batches: int = 0
     failed_batches: int = 0
     method: str = "extract"
@@ -42,7 +42,7 @@ class DocumentResult(BaseModel):
     text: str
     total_pages: int
     failed_pages: int
-    confidence: str  # "high" | "partial"
+    confidence: str  # "high" | "partial" | "low"
     total_batches: int = 0
     failed_batches: int = 0
 

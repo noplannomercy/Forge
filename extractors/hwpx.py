@@ -77,7 +77,9 @@ async def extract(file_bytes: bytes, file_name: str) -> ConvertResult:
                 parts = _parse_section(xml_bytes)
                 all_parts.extend(parts)
 
-    except (zipfile.BadZipFile, Exception):
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("HWPX extraction failed for %s: %s", file_name, e)
         return _empty_result(file_name)
 
     full_text = "\n\n".join(all_parts)
