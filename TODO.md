@@ -72,8 +72,9 @@
 
 ## v2 — 추가 개선
   - 세부 텍스트: 이미지 안 텍스트 빠뜨리지 않기
+- [x] **callback_url** — 완료/실패 시 결과 POST + 3회 retry (2026-04-09)
+  > 스펙: docs/superpowers/specs/2026-04-09-forge-callback-design.md
 - [ ] **결과 다운로드 엔드포인트** — `/result/{job_id}?format=text` 또는 `/result/{job_id}/download`
-  - 현재 JSON 감싸서 반환 → 마크다운 텍스트만 바로 받을 수 있어야 Cortex 연동 편함
 
 ## v3 — DB + LLM 메타 추출 (구현 완료 — 2026-04-08)
 
