@@ -158,6 +158,7 @@ async def process_job(
                 "domain": "general",
                 "metadata": updated_job.meta,
                 "extract": True,
+                "pre_converted": True,
                 # Forge 추적용 (Cortex에서 무시해도 됨)
                 "forge_job_id": updated_job.id,
                 "forge_status": updated_job.status,
