@@ -326,3 +326,51 @@ class VLMLogStore:
             job_id, batch_num, purpose, model, prompt_version,
             input_tokens, output_tokens, cost_usd, latency_ms, success, error,
         )
+
+
+class PromptStore:
+    def __init__(self, pool: asyncpg.Pool):
+        self._pool = pool
+
+    async def get_active(self, prompt_type: str) -> dict | None:
+        row = await self._pool.fetchrow(
+            "SELECT * FROM forge_prompts WHERE type = $1 AND is_active = TRUE",
+            prompt_type,
+        )
+        if row is None:
+            return None
+        return dict(row)
+
+    async def list_all(self) -> list[dict]:
+        rows = await self._pool.fetch(
+            "SELECT * FROM forge_prompts ORDER BY type, version DESC"
+        )
+        return [dict(r) for r in rows]
+
+    async def create_version(self, prompt_type: str, text: str) -> dict:
+        max_version = await self._pool.fetchval(
+            "SELECT MAX(version) FROM forge_prompts WHERE type = $1",
+            prompt_type,
+        )
+        new_version = (max_version or 0) + 1
+        await self._pool.execute(
+            "UPDATE forge_prompts SET is_active = FALSE WHERE type = $1 AND is_active = TRUE",
+            prompt_type,
+        )
+        row = await self._pool.fetchrow(
+            """INSERT INTO forge_prompts (type, version, text, is_active)
+               VALUES ($1, $2, $3, TRUE) RETURNING *""",
+            prompt_type, new_version, text,
+        )
+        return dict(row)
+
+    async def seed_if_empty(self, prompt_type: str, default_text: str) -> None:
+        exists = await self._pool.fetchval(
+            "SELECT COUNT(*) FROM forge_prompts WHERE type = $1", prompt_type
+        )
+        if exists == 0:
+            await self._pool.fetchrow(
+                """INSERT INTO forge_prompts (type, version, text, is_active)
+                   VALUES ($1, 1, $2, TRUE) RETURNING *""",
+                prompt_type, default_text,
+            )
