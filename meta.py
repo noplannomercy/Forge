@@ -19,7 +19,8 @@ MAX_INPUT_CHARS = 3000
 
 
 class MetaExtractor:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, prompt: str | None = None):
+        self.prompt = prompt or META_PROMPT
         self.url = config.meta_llm_url or config.vlm_url
         self.model = config.meta_llm_model or config.vlm_model
         api_key = config.meta_llm_api_key or config.vlm_api_key
@@ -34,7 +35,7 @@ class MetaExtractor:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "user", "content": f"{META_PROMPT}\n\n---\n\n{truncated}"}
+                {"role": "user", "content": f"{self.prompt}\n\n---\n\n{truncated}"}
             ],
             "max_tokens": 1024,
             "temperature": 0,

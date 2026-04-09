@@ -40,8 +40,9 @@ class BatchResult:
 
 
 class VLMClient:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, prompt: str | None = None):
         self.config = config
+        self.prompt = prompt or SEMANTIC_PROMPT
         self.client = httpx.AsyncClient(timeout=config.vlm_timeout)
         self.semaphore = asyncio.Semaphore(config.vlm_concurrency)
 
@@ -52,7 +53,7 @@ class VLMClient:
             for attempt in range(MAX_RETRIES):
                 try:
                     start_time = time.monotonic()
-                    content = [{"type": "text", "text": SEMANTIC_PROMPT}]
+                    content = [{"type": "text", "text": self.prompt}]
                     for img in images:
                         b64 = base64.b64encode(img).decode("utf-8")
                         content.append({
