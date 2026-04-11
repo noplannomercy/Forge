@@ -169,6 +169,59 @@ v3 코드 리뷰 defer 항목:
 - [ ] Job TTL + 자동 정리
 - [ ] GET /formats
 
+## AWS 이관 체크리스트 (현캐 AWS 계정에서 진행)
+
+> 현캐 AWS 환경에서 직접 수행. Forge 코드 수정 없음, 인프라 세팅만.
+
+### 사전 조건 (현캐 쪽)
+- [ ] AWS 계정 생성 + 결제 수단
+- [ ] VPC + 서브넷 + 보안그룹 기본 구성
+- [ ] IAM 역할/정책 (ECS Task Role, Bedrock 접근 등)
+- [ ] 사내 네트워크 ↔ AWS 연결 (VPN 또는 Direct Connect)
+
+### VLM 연결 (API Gateway + Bedrock)
+- [ ] Bedrock 모델 접근 권한 활성화 (GPT-4o 또는 Claude 3.5 Sonnet)
+- [ ] API Gateway 생성 → Bedrock OpenAI-compat 엔드포인트 연결
+- [ ] API Gateway에서 API Key 발급 (Forge의 VLM_API_KEY로 사용)
+- [ ] API Gateway → Bedrock 호출은 IAM Role + SigV4 자동 서명
+- [ ] 비전(멀티 이미지) 호출 테스트 — base64 이미지 5장 배치 동작 확인
+- [ ] (대안) LiteLLM 프록시 — API Gateway 없이 컨테이너로 SigV4 변환
+
+### 인프라 생성
+- [ ] RDS PostgreSQL 인스턴스 (pgvector 확장 필수)
+  - ⚠️ **AGE 확장 문제** — RDS에서 AGE 지원 안 함. Cortex 팀 확인 필요
+  - 대안: EC2에 직접 Postgres 설치 (관리형 포기) 또는 AGE 제거
+- [ ] ElastiCache Redis (Cortex 전용, Forge는 안 씀)
+- [ ] ECR 리포지토리 2개 (forge, cortex)
+- [ ] ECS 클러스터 (Fargate)
+- [ ] Cloud Map 네임스페이스 (서비스 디스커버리: forge.internal, cortex.internal)
+- [ ] ALB + 도메인 + ACM 인증서 (Cortex 외부 노출용)
+- [ ] CloudWatch Logs 그룹
+
+### 배포
+- [ ] ECR에 이미지 push (`docker tag` + `docker push`)
+- [ ] Secrets Manager에 키 등록 (VLM_API_KEY, DATABASE_URL, CALLBACK_API_KEY, OPENAI_API_KEY)
+- [ ] ECS Task Definition 작성 (cortex, forge 각각)
+  - Forge: `.env` 값 → Secrets Manager 참조 + env override
+  - 서비스 디스커버리: forge → forge.internal:8003
+- [ ] ECS Service 생성 (desired count: 1)
+- [ ] ALB Target Group → Cortex 연결
+- [ ] schema.sql 자동 적용 확인 (startup auto-apply)
+
+### 검증
+- [ ] `curl https://{domain}/v1/health` → Cortex OK
+- [ ] `curl http://forge.internal:8003/health` → Forge OK (내부망)
+- [ ] DOCX 업로드 → extract 경로 → 변환 완료
+- [ ] PDF 업로드 → VLM 경로 → Bedrock 비전 모델 호출 → 변환 완료
+- [ ] Cortex → Forge 위임 → callback → 청크 생성 E2E
+- [ ] VLM 비용 모니터링 (forge_vlm_logs + CloudWatch)
+
+### 배포 후
+- [ ] CloudWatch Alarms (에러율, 지연시간)
+- [ ] Auto Scaling 정책 (CPU/메모리 기준)
+- [ ] RDS 자동 백업 + 스냅샷 정책
+- [ ] CI/CD 파이프라인 (GitHub Actions → ECR push → ECS deploy)
+
 ## 수동 테스트 결과 (2026-04-07)
 
 | 포맷 | 테스트 | extract 품질 | 비고 |

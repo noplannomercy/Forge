@@ -1,6 +1,6 @@
 # Forge 배포/운영 매뉴얼
 
-> 최종 업데이트: 2026-04-09
+> 최종 업데이트: 2026-04-11
 > 대상: Forge(Document Converter) + Cortex(RAG) 연계 환경
 
 ---
@@ -124,6 +124,174 @@ cd Forge && docker compose -f docker-compose.integration.yml down
 cd ../cortex && docker compose -f docker-compose.integration.yml down
 cd ../infra && docker compose down
 # 데이터까지 날리려면: docker compose down -v
+```
+
+### 2.4 Docker 파일 상세 가이드
+
+#### 2.4.1 Dockerfile — 이미지 빌드 레시피
+
+```dockerfile
+FROM python:3.11-slim
+```
+베이스 이미지. Python 3.11이 깔린 경량 리눅스(Debian).
+
+```dockerfile
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libreoffice-impress \
+        libreoffice-core \
+        curl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+```
+시스템 패키지 설치:
+- `libreoffice-impress` + `libreoffice-core` — PPTX→PDF 변환에 필요 (이미지 크기 ~800MB의 주범)
+- `curl` — healthcheck에서 `/health` 호출할 때 사용
+- 마지막 줄은 apt 캐시 정리 (이미지 크기 절약)
+
+```dockerfile
+RUN groupadd --system forge && useradd --system --gid forge --create-home forge
+```
+보안용 non-root 사용자 생성. 컨테이너가 침해당해도 시스템 권한 없음.
+
+```dockerfile
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+```
+Python 패키지 설치. `requirements.txt`를 **먼저** 복사해서 설치하는 이유: 코드만 바꿨을 때 이 레이어가 캐시돼서 빌드가 빠름 (레이어 캐시 최적화).
+
+```dockerfile
+COPY --chown=forge:forge . .
+USER forge
+```
+앱 코드를 forge 유저 소유로 복사하고, 이후 모든 실행은 forge 유저. `.dockerignore`에 의해 `.env`, `tests/`, `docs/`, `.git/` 등은 복사에서 제외됨.
+
+```dockerfile
+EXPOSE 8003
+```
+포트 문서화. 실제 포트 매핑은 docker-compose에서 수행.
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8003/health || exit 1
+```
+Docker가 30초마다 `/health` 호출하여 컨테이너 생존 체크. 기동 후 20초는 유예. 3회 연속 실패 시 `unhealthy` 상태.
+
+```dockerfile
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8003"]
+```
+컨테이너 시작 명령. uvicorn으로 FastAPI 앱 기동.
+
+#### 2.4.2 .dockerignore — 이미지에 포함하지 않는 파일
+
+`.env`(API 키 등 비밀), `tests/`, `docs/`, `.git/`, `__pycache__/` 등 런타임에 불필요하거나 보안상 위험한 파일을 이미지에서 제외.
+
+**특히 중요:** `.env`가 이미지에 들어가면 API 키가 이미지에 박혀서 ECR 등에 푸시될 때 노출됨. `.dockerignore`가 이를 방지.
+
+#### 2.4.3 docker-compose.yml — Forge 단독 실행
+
+```yaml
+services:
+  forge:
+    build: .              # 현재 디렉토리의 Dockerfile로 빌드
+    image: forge:latest   # 빌드된 이미지 이름 태깅
+    container_name: forge # 컨테이너 이름 고정
+    ports:
+      - "8003:8003"       # 호스트 8003 → 컨테이너 8003 매핑
+    env_file:
+      - .env              # .env를 환경변수로 주입 (이미지에는 없지만 실행 시 읽음)
+    restart: unless-stopped  # 크래시 시 자동 재시작, 수동 stop은 존중
+    healthcheck: ...      # Dockerfile의 HEALTHCHECK와 동일
+```
+
+외부에 DB가 이미 떠있는 상황을 가정. `.env`의 `DATABASE_URL`에 `host.docker.internal:<PORT>` 사용.
+
+#### 2.4.4 docker-compose.integration.yml — Cortex 통합 실행
+
+단독 compose와 차이점 2가지:
+
+**1) `environment:` 블록으로 DATABASE_URL override:**
+```yaml
+env_file:
+  - .env              # 먼저 .env 읽음 (VLM_URL, API_KEY 등)
+environment:
+  DATABASE_URL: postgresql://hc:hc_dev@postgres:5432/hc_rag  # .env 값을 덮어씀
+```
+`.env`의 `DATABASE_URL`은 `localhost:5556`(로컬 개발용)이지만, integration에서는 DB가 `postgres`라는 서비스명의 컨테이너에 있으므로 override. `environment:`가 `env_file:`보다 우선.
+
+**2) 공유 네트워크 `hc-rag-network`:**
+```yaml
+networks:
+  - hc-rag-network        # 이 네트워크에 참여
+
+networks:
+  hc-rag-network:
+    external: true        # compose가 만드는 게 아니라 기존 네트워크 참조
+```
+같은 네트워크에 있으면 서비스명이 DNS처럼 작동:
+- `forge → http://postgres:5432` (DB 접근)
+- `forge → http://cortex:9000` (callback)
+- `cortex → http://forge:8003` (변환 위임)
+
+#### 2.4.5 네트워크 아키텍처 — 3개 compose가 1개 네트워크 공유
+
+```
+docker network create hc-rag-network
+         │
+    ┌────┴──────────────────────────────────┐
+    │          hc-rag-network               │
+    │                                       │
+    │  ┌─────────┐  infra compose           │
+    │  │postgres │  (5432)                  │
+    │  │redis    │  (6379)                  │
+    │  └─────────┘                          │
+    │                                       │
+    │  ┌─────────┐  cortex compose          │
+    │  │cortex   │  (9000)                  │
+    │  └─────────┘                          │
+    │                                       │
+    │  ┌─────────┐  forge compose           │
+    │  │forge    │  (8003)                  │
+    │  └─────────┘                          │
+    │                                       │
+    └───────────────────────────────────────┘
+```
+
+핵심: `localhost` 를 사용하지 않고 **서비스명(DNS alias)** 으로 통신. AWS 이관 시 Cloud Map 서비스 디스커버리로 1:1 매핑됨.
+
+#### 2.4.6 자주 쓰는 Docker 명령어
+
+```bash
+# 이미지 빌드 (코드 바꿨을 때)
+docker compose build
+
+# 빌드 + 기동 (백그라운드)
+docker compose up -d
+
+# 로그 실시간 확인
+docker compose logs -f forge
+
+# 컨테이너 안에서 디버깅
+docker exec -it forge bash
+
+# 컨테이너 상태 확인
+docker ps --format "{{.Names}}\t{{.Status}}"
+
+# DB 직접 쿼리 (integration 모드)
+docker exec hc-rag-postgres psql -U hc -d hc_rag -c "SELECT COUNT(*) FROM forge_jobs"
+
+# 이미지 다시 빌드 후 교체
+docker compose up -d --build
+
+# 정지 + 컨테이너 삭제
+docker compose down
+
+# 정지 + 컨테이너 + 볼륨(데이터) 삭제
+docker compose down -v
+
+# integration 모드 실행 (파일 지정)
+docker compose -f docker-compose.integration.yml up -d
+docker compose -f docker-compose.integration.yml down
 ```
 
 ---
