@@ -150,6 +150,81 @@ curl -X POST -H "X-API-Key: test" -H "Content-Type: application/json" \
 
 ---
 
+## Consumer 예시
+
+Forge는 consumer-agnostic하게 callback 결과를 전송한다. 어느 consumer든
+`pre_converted=true`, `X-API-Key` 헤더를 수용하면 Forge의 결과를 받을 수 있다.
+Forge는 consumer 이름을 전혀 알지 못하며, 단순히 `callback_url`로 payload를
+POST할 뿐이다.
+
+### Cortex (기존)
+
+Cortex의 `/v1/ingest`는 Forge의 기본 payload 포맷을 그대로 수용한다.
+
+```bash
+curl -X POST "http://forge:8003/convert?callback_url=http://cortex:9000/v1/ingest" \
+  -F "file=@doc.pdf"
+```
+
+callback payload (기본 포맷):
+
+```json
+{
+  "content": "...",
+  "file_name": "doc.pdf",
+  "domain": "...",
+  "metadata": {...},
+  "extract": true,
+  "pre_converted": true,
+  "forge_job_id": "...",
+  "forge_status": "completed",
+  "forge_error": null
+}
+```
+
+### 타 consumer 예시
+
+일부 consumer는 필드명이 다르다. 예를 들어 어떤 엔드포인트는 `content` 대신
+`text`, `file_name` 대신 `file_source`를 기대한다. 이런 경우
+`CALLBACK_FIELD_MAP` env로 consumer-specific 코드 없이 **필드명 rename** 만으로
+연결할 수 있다.
+
+`.env`:
+
+```
+CALLBACK_FIELD_MAP={"content":"text","file_name":"file_source"}
+CALLBACK_KEEP_UNMAPPED=false
+```
+
+호출:
+
+```bash
+curl -X POST "http://forge:8003/convert?callback_url=http://other-consumer:9621/documents/text" \
+  -F "file=@doc.pdf"
+```
+
+callback payload는 렌더링 시점에 필드명 rename + 매핑되지 않은 key drop을
+수행한 뒤 전송된다:
+
+```json
+{
+  "text": "...",
+  "file_source": "doc.pdf"
+}
+```
+
+### 주의사항
+
+- `CALLBACK_FIELD_MAP`은 Forge 인스턴스 단위의 **단일 env** 값이다. 서로 다른
+  payload 포맷을 요구하는 다중 consumer를 병렬 운영하려면 Forge 인스턴스를
+  각각 띄워야 한다.
+- `CALLBACK_KEEP_UNMAPPED=true`로 두면 rename 규칙에 없는 필드도 그대로 전달
+  된다 (consumer가 관대한 경우 유용).
+- 이 접근은 **C1 (Cortex 독립)** 을 준수한다 — Forge는 consumer 이름을 알 필요
+  없이, env가 시키는 대로 dict 키를 rename해서 POST할 뿐이다.
+
+---
+
 ## 인증 체계
 
 ### Cortex → Forge 방향
