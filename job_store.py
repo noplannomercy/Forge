@@ -440,6 +440,29 @@ def _normalize_prompt_text(text: str) -> str:
     return text.replace("\r\n", "\n").rstrip()
 
 
+async def ensure_latest_prompt(store, prompt_type: str, current_text: str) -> None:
+    """파일 내용이 DB active 버전과 다르면 새 버전 생성(auto-active).
+
+    동작:
+    * DB에 type=prompt_type인 active 프롬프트가 없으면 → create_version(v1).
+    * 있고 _normalize_prompt_text로 비교해 동일하면 → no-op (부팅 시마다 불필요한
+      write 방지, 줄바꿈/trailing whitespace 차이는 무시).
+    * 있고 정규화 비교 결과 다르면 → create_version(v+1). `create_version`이
+      기존 active를 자동 비활성화하므로 운영자 개입 불필요.
+
+    `seed_if_empty`와 달리 파일 쪽이 단일 진실 공급원(SSoT)임을 가정.
+    정규화 덕분에 `git config core.autocrlf` 설정 차이·editor trailing newline
+    차이로 버전 번호가 부팅마다 증가하는 문제를 방지.
+    """
+    active = await store.get_active(prompt_type)
+    if active is None:
+        await store.create_version(prompt_type, current_text)
+        return
+    if _normalize_prompt_text(active["text"]) == _normalize_prompt_text(current_text):
+        return
+    await store.create_version(prompt_type, current_text)
+
+
 def _load_reverse_doc_prompt() -> str:
     """revdoc/prompts/reverse_doc_v1.md 텍스트를 로드.
 

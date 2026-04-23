@@ -142,3 +142,89 @@ def test_normalize_prompt_text_preserves_real_content():
     assert _normalize_prompt_text("line1\nline2\nline3") == "line1\nline2\nline3"
     # 중간 공백/탭은 보존
     assert _normalize_prompt_text("a  b\tc") == "a  b\tc"
+
+
+# ---------------------------------------------------------------------------
+# ensure_latest_prompt — 기본 동작 3건
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ensure_latest_prompt_creates_when_empty():
+    from job_store import ensure_latest_prompt
+    store = InMemoryPromptStore()
+    await ensure_latest_prompt(store, "demo", "text v1")
+    active = await store.get_active("demo")
+    assert active is not None
+    assert active["version"] == 1
+    assert active["text"] == "text v1"
+    assert active["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_ensure_latest_prompt_noop_when_same():
+    from job_store import ensure_latest_prompt
+    store = InMemoryPromptStore()
+    await ensure_latest_prompt(store, "demo", "text v1")
+    await ensure_latest_prompt(store, "demo", "text v1")
+    all_versions = [p for p in await store.list_all() if p["type"] == "demo"]
+    assert len(all_versions) == 1
+    assert all_versions[0]["version"] == 1
+
+
+@pytest.mark.asyncio
+async def test_ensure_latest_prompt_upgrades_when_different():
+    from job_store import ensure_latest_prompt
+    store = InMemoryPromptStore()
+    await ensure_latest_prompt(store, "demo", "text v1")
+    await ensure_latest_prompt(store, "demo", "text v2 different")
+
+    all_versions = [p for p in await store.list_all() if p["type"] == "demo"]
+    assert len(all_versions) == 2
+    active = await store.get_active("demo")
+    assert active["version"] == 2
+    assert active["text"] == "text v2 different"
+    # v1은 비활성
+    v1 = next(p for p in all_versions if p["version"] == 1)
+    assert v1["is_active"] is False
+
+
+# ---------------------------------------------------------------------------
+# ensure_latest_prompt — 정규화 엣지 케이스 3건
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ensure_latest_prompt_ignores_trailing_newline():
+    """DB에 'text', 파일이 'text\\n' → 정규화 후 동일 → no-op."""
+    from job_store import ensure_latest_prompt
+    store = InMemoryPromptStore()
+    await ensure_latest_prompt(store, "demo", "text")
+    await ensure_latest_prompt(store, "demo", "text\n")
+    await ensure_latest_prompt(store, "demo", "text\n\n\n")
+    all_versions = [p for p in await store.list_all() if p["type"] == "demo"]
+    assert len(all_versions) == 1
+
+
+@pytest.mark.asyncio
+async def test_ensure_latest_prompt_ignores_crlf_diff():
+    """DB에 'a\\nb', 파일이 'a\\r\\nb' → 정규화 후 동일 → no-op (Windows autocrlf)."""
+    from job_store import ensure_latest_prompt
+    store = InMemoryPromptStore()
+    await ensure_latest_prompt(store, "demo", "a\nb")
+    await ensure_latest_prompt(store, "demo", "a\r\nb")
+    all_versions = [p for p in await store.list_all() if p["type"] == "demo"]
+    assert len(all_versions) == 1
+
+
+@pytest.mark.asyncio
+async def test_ensure_latest_prompt_detects_real_content_change():
+    """정규화가 실제 내용 변화를 가리지 않는지 검증."""
+    from job_store import ensure_latest_prompt
+    store = InMemoryPromptStore()
+    await ensure_latest_prompt(store, "demo", "hello")
+    await ensure_latest_prompt(store, "demo", "hello world")  # 내용 추가 → 신규 버전
+    all_versions = [p for p in await store.list_all() if p["type"] == "demo"]
+    assert len(all_versions) == 2
+    active = await store.get_active("demo")
+    assert active["text"] == "hello world"
