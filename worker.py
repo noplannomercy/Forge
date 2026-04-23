@@ -65,6 +65,7 @@ async def process_job(
     vlm_log_store=None,
     prompts: dict | None = None,
     revdoc_generator=None,
+    docling_log_store=None,
 ) -> None:
     """비동기 변환 워커. asyncio.create_task로 호출됨."""
     await store.update_status(job.id, JobStatus.PROCESSING)
@@ -78,6 +79,25 @@ async def process_job(
             await store.save_result(job.id, result)
 
             # extract 경로도 메타 추출
+            meta_prompt_info = prompts.get("meta_extract", {}) if prompts else {}
+            meta_ver = f"meta_extract-v{meta_prompt_info.get('version', '?')}" if meta_prompt_info else "meta_extract-v?"
+            meta = await _extract_meta(result.text, meta_extractor, config, prompts=prompts)
+            if meta:
+                await store.save_meta(job.id, meta, meta_ver)
+
+        elif route == "docling":
+            # v3 (T14): docling-serve 경로. HWPX는 T15에서 office.py bridge로 처리.
+            from extractors.docling_ex import extract as docling_extract
+            result = await docling_extract(
+                file_bytes,
+                job.file_name,
+                config=config,
+                docling_log_store=docling_log_store,
+                job_id=job.id,
+            )
+            await store.save_result(job.id, result)
+
+            # docling 경로도 extract와 동일하게 메타 추출
             meta_prompt_info = prompts.get("meta_extract", {}) if prompts else {}
             meta_ver = f"meta_extract-v{meta_prompt_info.get('version', '?')}" if meta_prompt_info else "meta_extract-v?"
             meta = await _extract_meta(result.text, meta_extractor, config, prompts=prompts)

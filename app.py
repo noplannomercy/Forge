@@ -31,10 +31,17 @@ async def _apply_schema(pool) -> None:
     logger.info("schema.sql applied successfully")
 
 
-async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None, vlm_log_store=None, prompts=None, revdoc_generator=None):
+async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None, vlm_log_store=None, prompts=None, revdoc_generator=None, docling_log_store=None):
     """create_task용 래퍼. 미처리 예외를 로깅."""
     try:
-        await process_job(job, file_bytes, route, store, config, meta_extractor=meta_extractor, vlm_log_store=vlm_log_store, prompts=prompts, revdoc_generator=revdoc_generator)
+        await process_job(
+            job, file_bytes, route, store, config,
+            meta_extractor=meta_extractor,
+            vlm_log_store=vlm_log_store,
+            prompts=prompts,
+            revdoc_generator=revdoc_generator,
+            docling_log_store=docling_log_store,
+        )
     except Exception:
         logger.exception("Unhandled error in job %s", job.id)
 
@@ -261,7 +268,14 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         meta_ext = getattr(app.state, "meta_extractor", None)
         vlm_logs = getattr(app.state, "vlm_log_store", None)
         prompts_cache = getattr(app.state, "prompts", None)
-        asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext, vlm_log_store=vlm_logs, prompts=prompts_cache))
+        docling_logs = getattr(app.state, "docling_log_store", None)
+        asyncio.create_task(_safe_process(
+            job, file_bytes, detected_route, current_store, config,
+            meta_extractor=meta_ext,
+            vlm_log_store=vlm_logs,
+            prompts=prompts_cache,
+            docling_log_store=docling_logs,
+        ))
 
         return {"job_id": job.id, "status": job.status}
 
@@ -326,7 +340,15 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             job.domain = domain
             meta_ext = getattr(app.state, "meta_extractor", None)
             prompts_cache = getattr(app.state, "prompts", None)
-            asyncio.create_task(_safe_process(job, file_bytes, detected_route, current_store, config, meta_extractor=meta_ext, prompts=prompts_cache))
+            vlm_logs = getattr(app.state, "vlm_log_store", None)
+            docling_logs = getattr(app.state, "docling_log_store", None)
+            asyncio.create_task(_safe_process(
+                job, file_bytes, detected_route, current_store, config,
+                meta_extractor=meta_ext,
+                vlm_log_store=vlm_logs,
+                prompts=prompts_cache,
+                docling_log_store=docling_logs,
+            ))
             jobs.append({"file_name": file_name, "job_id": job.id, "status": job.status})
 
         return {"jobs": jobs}

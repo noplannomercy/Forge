@@ -7,7 +7,8 @@ class UnsupportedFormatError(Exception):
     pass
 
 
-EXTRACT_FORMATS = {".docx", ".xlsx", ".hwpx"}
+EXTRACT_FORMATS = {".docx", ".xlsx"}
+DOCLING_FORMATS = {".hwpx"}
 VLM_FORMATS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".pptx"}
 
 
@@ -32,10 +33,22 @@ def try_extract_pdf_text(file_bytes: bytes) -> float:
 
 
 def detect_route(file_name: str, file_bytes: bytes, route_override: str | None = None) -> tuple[str, str]:
-    """파일명과 바이트로 처리 경로 결정. (route, source_format) 반환."""
+    """파일명과 바이트로 처리 경로 결정. (route, source_format) 반환.
+
+    v3 (LightRAG extension) 기본 라우팅:
+      - PDF with text → ``docling`` (was ``extract``)
+      - PDF scan → ``vlm``
+      - HWPX → ``docling`` (T15에서 DOCX bridge 구현)
+      - DOCX / XLSX → ``extract``
+      - PPTX / 이미지 → ``vlm``
+
+    ``route_override``는 ``"extract" | "vlm" | "docling"`` 세 값을 허용한다.
+    """
     ext = Path(file_name).suffix.lower()
 
     if ext in EXTRACT_FORMATS:
+        fmt = ext[1:]
+    elif ext in DOCLING_FORMATS:
         fmt = ext[1:]
     elif ext in VLM_FORMATS:
         fmt = ext[1:]
@@ -44,7 +57,7 @@ def detect_route(file_name: str, file_bytes: bytes, route_override: str | None =
     else:
         raise UnsupportedFormatError(f"Unsupported format: {ext}")
 
-    if route_override in ("extract", "vlm"):
+    if route_override in ("extract", "vlm", "docling"):
         # PPTX는 extract 불가 (VLM only — extractors에서 제거됨)
         if route_override == "extract" and ext == ".pptx":
             raise UnsupportedFormatError("PPTX는 extract 경로를 지원하지 않습니다. route=vlm을 사용하세요.")
@@ -53,6 +66,9 @@ def detect_route(file_name: str, file_bytes: bytes, route_override: str | None =
     if ext in EXTRACT_FORMATS:
         return ("extract", fmt)
 
+    if ext in DOCLING_FORMATS:
+        return ("docling", fmt)
+
     if ext in VLM_FORMATS:
         return ("vlm", fmt)
 
@@ -60,4 +76,5 @@ def detect_route(file_name: str, file_bytes: bytes, route_override: str | None =
     chars_per_mb = try_extract_pdf_text(file_bytes)
     if chars_per_mb < 100:
         return ("vlm", "pdf")
-    return ("extract", "pdf")
+    # v3 default: text-bearing PDF → docling (was "extract")
+    return ("docling", "pdf")
