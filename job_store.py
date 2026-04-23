@@ -464,7 +464,7 @@ async def ensure_latest_prompt(store, prompt_type: str, current_text: str) -> No
 
 
 def _load_reverse_doc_prompt() -> str:
-    """revdoc/prompts/reverse_doc_v1.md 텍스트를 로드.
+    """revdoc/prompts/reverse_doc.md 텍스트를 로드.
 
     파일 누락 시 RuntimeError. 하드코딩 fallback 없음 — 배포 누락 즉시 감지.
     """
@@ -472,7 +472,7 @@ def _load_reverse_doc_prompt() -> str:
         os.path.dirname(os.path.abspath(__file__)),
         "revdoc",
         "prompts",
-        "reverse_doc_v1.md",
+        "reverse_doc.md",
     )
     if not os.path.isfile(path):
         raise RuntimeError(f"reverse_doc prompt file missing: {path}")
