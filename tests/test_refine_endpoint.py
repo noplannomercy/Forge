@@ -26,11 +26,12 @@ async def client():
     """AsyncClient with lifespan-started app (so app.state.refiner is wired)."""
     app = create_app(config=Config(forge_api_key="", database_url=""))
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        # Manually drive startup so lifespan seeds InMemory refine rules
-        # and constructs the Refiner. ASGITransport does NOT invoke
-        # lifespan events — we call the lifespan context explicitly.
-        async with app.router.lifespan_context(app):
+    # Lifespan OUTER, client INNER: shutdown must run after the client
+    # closes, not before. ASGITransport does NOT invoke lifespan events
+    # on its own — we drive the lifespan context explicitly so that
+    # app.state.refiner is wired before the client issues requests.
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
             yield c
 
 
@@ -106,10 +107,9 @@ async def test_refine_sync_rejects_empty_body(client):
         "/refine",
         files={"dummy": ("", b"", "application/octet-stream")},
     )
-    # Either FastAPI rejects (422) or our validator returns 400.
-    # We explicitly want our 400. If FastAPI treats the empty file as
-    # absent, it will fall through to our check.
-    assert resp.status_code in (400, 422)
+    # Endpoint deterministically returns 400 via
+    # HTTPException(400, "file or text is required") when both are None.
+    assert resp.status_code == 400
 
 
 # --------------------------------------------------------------------------- #
@@ -138,8 +138,8 @@ async def test_refine_sync_rejects_oversized_file():
     """Use a shrunk MAX_FILE_SIZE to trigger 413 without allocating 100MB."""
     app = create_app(config=Config(forge_api_key="", database_url="", max_file_size=10))
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        async with app.router.lifespan_context(app):
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
             resp = await c.post(
                 "/refine",
                 files={"file": ("big.md", b"x" * 100, "application/octet-stream")},

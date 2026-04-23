@@ -141,6 +141,10 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         else:
             raw = text  # str
 
+        # 503 guard: exists for test-harness scenarios where create_app()
+        # is invoked without running lifespan. In production Postgres mode,
+        # pool creation failure would propagate and prevent app start
+        # entirely; in production InMemory mode, lifespan cannot fail.
         refiner: Refiner | None = getattr(request.app.state, "refiner", None)
         if refiner is None:
             raise HTTPException(status_code=503, detail="Refiner not initialized")
