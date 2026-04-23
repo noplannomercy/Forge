@@ -64,6 +64,7 @@ async def process_job(
     meta_extractor: MetaExtractor | None = None,
     vlm_log_store=None,
     prompts: dict | None = None,
+    revdoc_generator=None,
 ) -> None:
     """비동기 변환 워커. asyncio.create_task로 호출됨."""
     await store.update_status(job.id, JobStatus.PROCESSING)
@@ -144,6 +145,45 @@ async def process_job(
             meta = await _extract_meta(result.text, meta_extractor, config, prompts=prompts)
             if meta:
                 await store.save_meta(job.id, meta, meta_ver)
+
+        elif route == "reverse_doc":
+            # T10: reverse-doc route — generator orchestrates prompt+VLM+gate+refine.
+            if revdoc_generator is None:
+                raise RuntimeError("reverse_doc route requires revdoc_generator")
+
+            # source_code은 Job에 dynamic 속성(CF-3)으로 붙어 전달됨.
+            # 없으면 file_bytes를 UTF-8로 디코드 (강제 재시작 후 복구 시나리오).
+            source_code = getattr(job, "source_code", None)
+            if source_code is None:
+                source_code = file_bytes.decode("utf-8", errors="replace")
+
+            revdoc_result = await revdoc_generator.generate(source_code, job.file_name)
+
+            result = ConvertResult(
+                text=revdoc_result.result_text,
+                format="md",
+                pages=1,
+                file_name=job.file_name,
+                source_format=job.source_format,
+                route="reverse_doc",
+                quality=Quality(
+                    total_chars=len(revdoc_result.result_text),
+                    chars_per_page=len(revdoc_result.result_text),
+                    total_pages=1,
+                    failed_pages=0,
+                    confidence="high" if revdoc_result.gate["passed"] else "low",
+                    method="reverse_doc",
+                ),
+            )
+            await store.save_result(job.id, result)
+
+            # gate/refine/attempts/prompt_version을 meta에 저장 (Job.meta는 dict).
+            revdoc_meta = {
+                "revdoc_gate": revdoc_result.gate,
+                "refine_report": revdoc_result.refine_report,
+                "attempts": revdoc_result.attempts,
+            }
+            await store.save_meta(job.id, revdoc_meta, revdoc_result.prompt_version)
 
     except Exception as e:
         await store.save_error(job.id, str(e))

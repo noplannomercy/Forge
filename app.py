@@ -31,10 +31,10 @@ async def _apply_schema(pool) -> None:
     logger.info("schema.sql applied successfully")
 
 
-async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None, vlm_log_store=None, prompts=None):
+async def _safe_process(job, file_bytes, route, store, config, meta_extractor=None, vlm_log_store=None, prompts=None, revdoc_generator=None):
     """create_task용 래퍼. 미처리 예외를 로깅."""
     try:
-        await process_job(job, file_bytes, route, store, config, meta_extractor=meta_extractor, vlm_log_store=vlm_log_store, prompts=prompts)
+        await process_job(job, file_bytes, route, store, config, meta_extractor=meta_extractor, vlm_log_store=vlm_log_store, prompts=prompts, revdoc_generator=revdoc_generator)
     except Exception:
         logger.exception("Unhandled error in job %s", job.id)
 
@@ -100,6 +100,17 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         await seed_refine_rules(a.state.refine_rule_store)
         a.state.refiner = await Refiner.from_store(a.state.refine_rule_store)
 
+        # T10: reverse-doc generator — owns its own VLMClient for process_text calls.
+        from vlm import VLMClient
+        from revdoc.generator import ReverseDocGenerator
+        a.state.revdoc_vlm = VLMClient(config)
+        a.state.revdoc_generator = ReverseDocGenerator(
+            vlm=a.state.revdoc_vlm,
+            prompt_store=a.state.prompt_store,
+            refiner=a.state.refiner,
+            model=config.revdoc_model,
+        )
+
         yield
 
         # shutdown
@@ -107,6 +118,8 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             await a.state.pool.close()
         if hasattr(a.state, "meta_extractor"):
             await a.state.meta_extractor.close()
+        if hasattr(a.state, "revdoc_vlm"):
+            await a.state.revdoc_vlm.close()
 
     app = FastAPI(title="Forge — Document Converter", version="0.3.0", lifespan=lifespan)
 
@@ -164,6 +177,52 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             quality=result.quality,
             rule_versions=result.rule_versions,
         )
+
+    @app.post("/reverse-doc", summary="역문서 생성 (비동기)", tags=["역문서"])
+    async def reverse_doc(
+        request: Request,
+        file: UploadFile = File(..., description="소스 코드 파일 (예: .pkb, .sql, .py)"),
+        callback_url: str | None = Form(None, description="완료/실패 시 결과 POST URL"),
+        requested_by: str | None = Form(None, description="요청자 식별"),
+    ):
+        """소스 코드 업로드 → VLM으로 역문서 MD 생성 (비동기). job_id 즉시 반환.
+
+        REVDOC-01: 최대 200KB (일반 /convert의 100MB와 별개 제한).
+        """
+        raw = await file.read()
+
+        # REVDOC-01: 200KB 제한
+        if len(raw) > 200 * 1024:
+            raise HTTPException(status_code=413, detail="reverse-doc max 200KB")
+
+        source_code = raw.decode("utf-8", errors="replace")
+
+        current_store = request.app.state.store
+        job = await current_store.create(
+            file.filename or "unknown",
+            "reverse_doc",
+            "reverse_doc",
+            file_size=len(raw),
+            method="reverse_doc",
+            requested_by=requested_by,
+        )
+        job.callback_url = callback_url
+        # CF-3: source_code는 Job에 dynamic 속성으로만 붙이고 DB에는 저장하지 않음.
+        job.source_code = source_code
+
+        revdoc_gen = getattr(request.app.state, "revdoc_generator", None)
+        if revdoc_gen is None:
+            raise HTTPException(status_code=503, detail="reverse_doc generator not initialized")
+
+        # C4: _safe_process 래퍼 필수
+        asyncio.create_task(
+            _safe_process(
+                job, raw, "reverse_doc", current_store, config,
+                revdoc_generator=revdoc_gen,
+            )
+        )
+
+        return {"job_id": job.id, "status": job.status}
 
     @app.post("/convert", summary="문서 변환", tags=["변환"])
     async def convert(

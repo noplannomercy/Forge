@@ -69,6 +69,8 @@ class Job(BaseModel):
     meta_prompt_version: str | None = None
     callback_url: str | None = None
     domain: str = "general"
+    # T10 (CF-3): reverse_doc source code held in memory only — never persisted to DB.
+    source_code: str | None = None
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: datetime | None = None
