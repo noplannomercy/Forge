@@ -32,7 +32,6 @@ Design notes:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from .gate import GateVerdict, RevdocGate
 

@@ -11,7 +11,7 @@ from extractors.office import pptx_to_pdf
 from extractors.pdf import extract_text, pdf_to_images
 from job_store import JobStore
 from meta import MetaExtractor
-from models import ConvertResult, DocumentResult, Job, JobStatus, Quality
+from models import ConvertResult, Job, JobStatus, Quality
 from vlm import VLMClient
 
 logger = logging.getLogger(__name__)

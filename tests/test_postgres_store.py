@@ -1,6 +1,5 @@
 import pytest
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from job_store import PostgresJobStore, VLMLogStore
 from models import JobStatus, ConvertResult, Quality
 

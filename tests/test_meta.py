@@ -46,7 +46,7 @@ async def test_extract_meta_truncates_long_text(extractor):
 
     long_text = "x" * 10000
     with patch.object(extractor.client, "post", new_callable=AsyncMock, return_value=mock_response) as mock_post:
-        meta = await extractor.extract(long_text)
+        await extractor.extract(long_text)
 
     # Verify the text was truncated in the payload
     call_args = mock_post.call_args

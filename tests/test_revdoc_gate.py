@@ -7,7 +7,6 @@ contract.
 
 from __future__ import annotations
 
-import pytest
 
 from revdoc.gate import REQUIRED_SECTIONS, GateVerdict, RevdocGate
 

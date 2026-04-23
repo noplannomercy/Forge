@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from vlm import VLMClient, BatchResult
+from vlm import VLMClient
 from config import Config
 
 
