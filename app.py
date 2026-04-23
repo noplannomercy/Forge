@@ -4,11 +4,13 @@ import os
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from config import Config
 from job_store import InMemoryJobStore, JobStore
+from models import RefineResponse
+from refine import Refiner
 from router import UnsupportedFormatError, detect_route
 from worker import process_job
 
@@ -46,9 +48,15 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
         # startup
         a.state.store = store
         a.state.config = config
+        # T5: refine rule store + refiner — shared import for both branches.
+        from job_store import (
+            InMemoryRefineRuleStore,
+            seed_refine_rules,
+        )
+
         if config.database_url:
             import asyncpg
-            from job_store import PostgresJobStore, VLMLogStore, PromptStore
+            from job_store import PostgresJobStore, VLMLogStore, PromptStore, PostgresRefineRuleStore
             from vlm import SEMANTIC_PROMPT
             from meta import META_PROMPT
             pool = await asyncpg.create_pool(config.database_url)
@@ -75,9 +83,15 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             from meta import MetaExtractor
             meta_prompt_text = a.state.prompts.get("meta_extract", {}).get("text")
             a.state.meta_extractor = MetaExtractor(config, prompt=meta_prompt_text)
+
+            a.state.refine_rule_store = PostgresRefineRuleStore(pool)
         else:
             from meta import MetaExtractor
             a.state.meta_extractor = MetaExtractor(config)
+            a.state.refine_rule_store = InMemoryRefineRuleStore()
+
+        await seed_refine_rules(a.state.refine_rule_store)
+        a.state.refiner = await Refiner.from_store(a.state.refine_rule_store)
 
         yield
 
@@ -104,6 +118,41 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     async def health():
         """서비스 상태 확인. `{"status": "ok"}` 반환."""
         return {"status": "ok"}
+
+    @app.post("/refine", response_model=RefineResponse, summary="MD 정제 (동기)", tags=["정제"])
+    async def refine_sync(
+        request: Request,
+        file: UploadFile | None = File(None, description="정제할 파일 (선택)"),
+        text: str | None = Form(None, description="정제할 텍스트 (선택)"),
+    ):
+        """동기 MD 정제. multipart form으로 file 또는 text 하나만 제공.
+
+        6단계 정제 + validator gate를 거친 결과 + report + quality + rule_versions 반환.
+        """
+        if file is None and text is None:
+            raise HTTPException(status_code=400, detail="file or text is required")
+        if file is not None and text is not None:
+            raise HTTPException(status_code=400, detail="provide file OR text, not both")
+
+        if file is not None:
+            raw = await file.read()
+            if len(raw) > config.max_file_size:
+                raise HTTPException(status_code=413, detail=f"File too large: max {config.max_file_size} bytes")
+        else:
+            raw = text  # str
+
+        refiner: Refiner | None = getattr(request.app.state, "refiner", None)
+        if refiner is None:
+            raise HTTPException(status_code=503, detail="Refiner not initialized")
+
+        result = refiner.refine(raw)
+
+        return RefineResponse(
+            refined_text=result.text,
+            report=result.report,
+            quality=result.quality,
+            rule_versions=result.rule_versions,
+        )
 
     @app.post("/convert", summary="문서 변환", tags=["변환"])
     async def convert(

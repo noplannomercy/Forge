@@ -47,6 +47,13 @@ class DocumentResult(BaseModel):
     failed_batches: int = 0
 
 
+class RefineResponse(BaseModel):
+    refined_text: str
+    report: dict  # per-stage StageReport dicts
+    quality: dict  # {"gate": "pass"|"fail", "checks": {...}, "reason"?: str}
+    rule_versions: dict  # {stage_name: version}
+
+
 class Job(BaseModel):
     id: str
     status: JobStatus
