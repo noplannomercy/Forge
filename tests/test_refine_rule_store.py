@@ -90,3 +90,10 @@ async def test_seed_is_idempotent(store):
     for stage in REFINE_RULE_DEFAULTS:
         rule = await store.active(stage)
         assert rule["version"] == 1
+
+
+@pytest.mark.asyncio
+async def test_upsert_rejects_config_with_version_key():
+    store = InMemoryRefineRuleStore()
+    with pytest.raises(ValueError, match="version"):
+        await store.upsert("encoding", {"try_order": ["utf-8"], "version": 99})

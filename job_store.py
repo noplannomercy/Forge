@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from models import ConvertResult, Job, JobStatus, Quality
 
 if TYPE_CHECKING:
     import asyncpg
+
+logger = logging.getLogger(__name__)
 
 
 class JobStore(ABC):
@@ -419,6 +422,10 @@ class InMemoryRefineRuleStore(RefineRuleStore):
         raise LookupError(f"No active refine rule for stage: {stage}")
 
     async def upsert(self, stage: str, config: dict) -> int:
+        if "version" in config:
+            raise ValueError(
+                "config must not contain reserved key 'version' — it is store-managed"
+            )
         versions = self._rules.setdefault(stage, [])
         # Deactivate prior active
         for entry in versions:
@@ -459,6 +466,10 @@ class PostgresRefineRuleStore(RefineRuleStore):
         return {**config, "version": row["version"]}
 
     async def upsert(self, stage: str, config: dict) -> int:
+        if "version" in config:
+            raise ValueError(
+                "config must not contain reserved key 'version' — it is store-managed"
+            )
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 max_version = await conn.fetchval(
@@ -519,3 +530,4 @@ async def seed_refine_rules(store: RefineRuleStore) -> None:
             await store.active(stage)
         except LookupError:
             await store.upsert(stage, config)
+            logger.info("Seeded default refine rule for stage: %s", stage)
