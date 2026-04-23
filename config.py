@@ -1,3 +1,6 @@
+import json
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,7 +34,23 @@ class Config(BaseSettings):
     callback_field_map: str | None = None
     callback_keep_unmapped: bool = False
 
-    # REVDOC dedicated model. None → fallback to vlm_model.
+    # REVDOC 전용 모델 (미설정 시 VLM_MODEL fallback)
     revdoc_model: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @field_validator("callback_field_map")
+    @classmethod
+    def _validate_callback_field_map(cls, v: str | None) -> str | None:
+        """CALLBACK_FIELD_MAP 사전 검증 — 시동 시점에 실패시켜 런타임 콜백 누락을 방지."""
+        if v is None or v == "":
+            return None
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"CALLBACK_FIELD_MAP must be valid JSON: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("CALLBACK_FIELD_MAP must be a JSON object")
+        if not all(isinstance(k, str) and isinstance(val, str) for k, val in parsed.items()):
+            raise ValueError("CALLBACK_FIELD_MAP must be a JSON object mapping string→string")
+        return v

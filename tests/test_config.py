@@ -65,3 +65,40 @@ def test_config_forge_api_key_from_env(monkeypatch):
     monkeypatch.setenv("FORGE_API_KEY", "my-secret-key")
     config = Config()
     assert config.forge_api_key == "my-secret-key"
+
+
+def test_config_callback_field_map_none_default():
+    """미설정 시 None."""
+    config = Config(callback_field_map=None)
+    assert config.callback_field_map is None
+
+
+def test_config_callback_field_map_empty_string_normalized_to_none():
+    """빈 문자열은 None으로 정규화."""
+    config = Config(callback_field_map="")
+    assert config.callback_field_map is None
+
+
+def test_config_callback_field_map_valid_json_object():
+    """유효한 string→string JSON object는 통과."""
+    raw = '{"content":"text","file_name":"file_source"}'
+    config = Config(callback_field_map=raw)
+    assert config.callback_field_map == raw
+
+
+def test_config_rejects_malformed_callback_field_map():
+    """잘못된 JSON은 시동 시점에 ValueError."""
+    with pytest.raises(ValueError, match="CALLBACK_FIELD_MAP"):
+        Config(callback_field_map="{not-json")
+
+
+def test_config_rejects_non_dict_callback_field_map():
+    """JSON array는 거부 (dict만 허용)."""
+    with pytest.raises(ValueError, match="CALLBACK_FIELD_MAP"):
+        Config(callback_field_map='["a", "b"]')
+
+
+def test_config_rejects_non_string_values_callback_field_map():
+    """value가 문자열이 아니면 거부."""
+    with pytest.raises(ValueError, match="CALLBACK_FIELD_MAP"):
+        Config(callback_field_map='{"content": 123}')

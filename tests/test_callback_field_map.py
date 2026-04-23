@@ -7,14 +7,8 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from config import Config
-from job_store import InMemoryJobStore
 from models import ConvertResult, Quality
 from worker import process_job
-
-
-@pytest.fixture
-def store():
-    return InMemoryJobStore()
 
 
 @pytest.fixture
@@ -94,3 +88,40 @@ async def test_callback_keeps_original_without_map(store, mock_result):
     assert sent_payload["pre_converted"] is True
     assert sent_payload["forge_job_id"] == job.id
     assert sent_payload["forge_status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_callback_renames_and_keeps_unmapped(store, mock_result):
+    """keep_unmapped=True: mapped keys renamed, unmapped keys retained."""
+    config = Config(
+        callback_field_map='{"content":"text"}',
+        callback_keep_unmapped=True,
+    )
+    job = await store.create(
+        "test.docx", "docx", "extract",
+        callback_url="http://downstream/ingest",
+    )
+    with patch("worker.EXTRACTORS", {"docx": AsyncMock(return_value=mock_result)}):
+        with patch("worker.MetaExtractor") as MockMeta:
+            mock_meta = AsyncMock()
+            mock_meta.extract = AsyncMock(return_value={})
+            mock_meta.close = AsyncMock()
+            MockMeta.return_value = mock_meta
+            with patch("worker._send_callback", new_callable=AsyncMock) as mock_cb:
+                await process_job(job, b"fake", "extract", store, config)
+
+    mock_cb.assert_called_once()
+    sent_payload = mock_cb.call_args[0][1]
+    # Mapped key renamed: content → text.
+    assert "text" in sent_payload
+    assert sent_payload["text"] == "# Hello"
+    assert "content" not in sent_payload
+    # Unmapped keys retained (keep_unmapped=True).
+    assert "file_name" in sent_payload
+    assert sent_payload["file_name"] == "test.docx"
+    assert "forge_job_id" in sent_payload
+    assert sent_payload["forge_job_id"] == job.id
+    assert "domain" in sent_payload
+    assert "metadata" in sent_payload
+    assert sent_payload["extract"] is True
+    assert sent_payload["pre_converted"] is True

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 
 import httpx
@@ -168,11 +169,32 @@ async def process_job(
             # Consumer-agnostic field rename (e.g. LightRAG content→text, file_name→file_source).
             # C6: no consumer-specific branching — generic rename only.
             if config.callback_field_map:
-                import json
-                rename_map = json.loads(config.callback_field_map)
-                payload = {rename_map.get(k, k): v for k, v in payload.items()}
-                if not config.callback_keep_unmapped:
-                    payload = {k: v for k, v in payload.items() if k in rename_map.values()}
+                # Config validator already enforces valid JSON object (string→string) at load time.
+                # Defensive narrow except in case something bypasses validation — avoid
+                # silently eating the callback via the blanket `except Exception` above.
+                try:
+                    rename_map = json.loads(config.callback_field_map)
+                except json.JSONDecodeError:
+                    logger.error(
+                        "CALLBACK_FIELD_MAP malformed at callback time for job %s — sending unrenamed payload",
+                        job.id,
+                        exc_info=True,
+                    )
+                    rename_map = None
+
+                if rename_map is not None:
+                    renamed: dict = {}
+                    for k, v in payload.items():
+                        new_key = rename_map.get(k, k)
+                        if new_key in renamed:
+                            logger.warning(
+                                "CALLBACK_FIELD_MAP: key collision on '%s' for job %s — earlier value overwritten",
+                                new_key, job.id,
+                            )
+                        renamed[new_key] = v
+                    payload = renamed
+                    if not config.callback_keep_unmapped:
+                        payload = {k: v for k, v in payload.items() if k in rename_map.values()}
 
             cb_headers = {}
             if config.callback_api_key:

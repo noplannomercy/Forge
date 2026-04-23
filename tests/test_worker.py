@@ -1,14 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from worker import process_job
-from job_store import InMemoryJobStore
 from models import JobStatus, ConvertResult, Quality, DocumentResult
 from config import Config
-
-
-@pytest.fixture
-def store():
-    return InMemoryJobStore()
 
 
 @pytest.fixture
