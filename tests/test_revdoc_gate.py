@@ -1,8 +1,7 @@
 """Tests for revdoc.gate (REVDOC-05).
 
-Covers the three-check pipeline (sections > traceability > length),
-priority order, fullwidth-colon tolerance, and the feedback/details
-contract.
+Covers the two-check pipeline (sections > length), priority order,
+and the feedback/details contract.
 """
 
 from __future__ import annotations
@@ -23,10 +22,8 @@ def _valid_md(length: int = 900) -> str:
         "## 입력/출력\n- 입력: customer_id (str)\n- 출력: tier (str)\n\n"
         "## 규칙/예외\n- total_amount > 1000 이면 GOLD\n- 예외 시 BRONZE\n\n"
         "## 근거\n사내 고객 정책 문서 R-001 근거로 작성.\n\n"
-        "## 추적성\n"
-        "- Rule: R-001 고객 등급 산출\n"
-        "- Condition: total_amount > 1000 AND tier = 'GOLD'\n"
-        "- Evidence: customer_tier.py:45\n\n"
+        "## 추적성\n이 코드는 R-001 고객 등급 산출 업무 규칙을 구현하며, "
+        "근거는 사내 정책 문서에서 확인할 수 있다.\n\n"
         "## 관련업무\n- 선행: 주문 집계\n- 후행: 혜택 부여\n"
     )
     # Pad body with filler inside the 관련업무 section to grow length.
@@ -35,7 +32,7 @@ def _valid_md(length: int = 900) -> str:
 
 
 def test_gate_pass_minimal():
-    """MD with all 7 sections, triangle present, length >= 800 passes."""
+    """MD with all 7 sections and length >= 500 passes."""
     gate = RevdocGate()
     md = _valid_md(length=900)
     verdict = gate.check(md)
@@ -43,11 +40,6 @@ def test_gate_pass_minimal():
     assert verdict.reason is None
     assert verdict.feedback is None
     assert verdict.details["missing_sections"] == []
-    assert verdict.details["traceability"] == {
-        "rule": True,
-        "condition": True,
-        "evidence": True,
-    }
     assert verdict.details["length"] >= 800
 
 
@@ -67,35 +59,13 @@ def test_gate_fail_missing_section():
     assert verdict.details["missing_sections"] == ["처리흐름"]
 
 
-def test_gate_fail_traceability_missing_rule():
-    """All sections present but no Rule: → traceability failure."""
+def test_gate_fail_length_under_500():
+    """All sections present, but length < 500 → length failure."""
     gate = RevdocGate()
-    md = _valid_md(length=900).replace(
-        "- Rule: R-001 고객 등급 산출\n", ""
-    )
-    verdict = gate.check(md)
-    assert verdict.passed is False
-    assert verdict.reason is not None
-    assert "traceability" in verdict.reason
-    assert "Rule" in verdict.reason
-    assert verdict.feedback is not None
-    assert "Rule" in verdict.feedback
-    # Sections check should have succeeded first.
-    assert verdict.details["missing_sections"] == []
-    assert verdict.details["traceability"]["rule"] is False
-    assert verdict.details["traceability"]["condition"] is True
-    assert verdict.details["traceability"]["evidence"] is True
-
-
-def test_gate_fail_length_under_800():
-    """All sections + triangle present, but length < 800 → length failure."""
-    gate = RevdocGate()
-    # _valid_md(length=500) caps padding to whatever keeps total ~500;
-    # ensure below 800.
-    md = _valid_md(length=500)
+    md = _valid_md(length=300)
     # Sanity: explicit floor so the test is not subtly broken by future
-    # template growth pushing the un-padded body above 800.
-    assert len(md) < 800
+    # template growth pushing the un-padded body above 500.
+    assert len(md) < 500
     verdict = gate.check(md)
     assert verdict.passed is False
     assert verdict.reason is not None
@@ -103,19 +73,14 @@ def test_gate_fail_length_under_800():
     assert verdict.feedback is not None
     # Earlier checks must have populated their details fields.
     assert verdict.details["missing_sections"] == []
-    assert verdict.details["traceability"] == {
-        "rule": True,
-        "condition": True,
-        "evidence": True,
-    }
     assert verdict.details["length"] == len(md)
 
 
 def test_gate_fail_priority_order():
     """When multiple checks would fail, section check wins (highest priority).
 
-    Construct MD missing a section AND missing Rule AND well under 800 chars.
-    The reason must mention sections, not traceability or length.
+    Construct MD missing a section AND well under 500 chars.
+    The reason must mention sections, not length.
     """
     gate = RevdocGate()
     md = (
@@ -123,41 +88,23 @@ def test_gate_fail_priority_order():
         "## 입력/출력\n- a\n\n"
         "## 규칙/예외\n- b\n\n"
         "## 근거\n없음.\n\n"
-        "## 추적성\n- Condition: c\n- Evidence: d\n\n"
+        "## 추적성\n자유 서술.\n\n"
         "## 관련업무\n- e\n"
     )
-    # Sanity: this MD should fail all three checks if run in isolation.
+    # Sanity: this MD should fail section + length checks.
     assert "## 처리흐름" not in md  # section missing
-    assert "Rule:" not in md  # triangle broken
-    assert len(md) < 800  # length short
+    assert len(md) < 500  # length short
 
     verdict = gate.check(md)
     assert verdict.passed is False
     assert verdict.reason is not None
     assert "missing" in verdict.reason
-    # Priority: must NOT fall through to traceability or length.
-    assert "traceability" not in verdict.reason
+    # Priority: must NOT fall through to length.
     assert "length" not in verdict.reason
     # Details contract: only section-phase measurements present.
     assert "missing_sections" in verdict.details
     assert "처리흐름" in verdict.details["missing_sections"]
-    assert "traceability" not in verdict.details
     assert "length" not in verdict.details
-
-
-def test_gate_accepts_korean_fullwidth_colon():
-    """``Rule：`` / ``Condition：`` / ``Evidence：`` (U+FF1A) must match."""
-    gate = RevdocGate()
-    md = _valid_md(length=900)
-    # Swap ASCII ':' for fullwidth '：' in the triangle block.
-    md = md.replace("- Rule: R-001", "- Rule：R-001")
-    md = md.replace("- Condition: total_amount", "- Condition：total_amount")
-    md = md.replace("- Evidence: customer_tier.py:45", "- Evidence：customer_tier.py:45")
-    assert "Rule：" in md and "Condition：" in md and "Evidence：" in md
-    verdict = gate.check(md)
-    assert verdict.passed is True, (
-        f"fullwidth colon should be accepted; verdict={verdict}"
-    )
 
 
 def test_gate_feedback_populated_on_failure():
@@ -171,73 +118,57 @@ def test_gate_feedback_populated_on_failure():
     assert v1.feedback is not None and len(v1.feedback) > 10
     assert "섹션" in v1.feedback or "section" in v1.feedback.lower()
 
-    # Failure type 2: missing triangle piece.
-    md_no_rule = _valid_md(length=900).replace("- Rule: R-001 고객 등급 산출\n", "")
-    v2 = gate.check(md_no_rule)
+    # Failure type 2: length.
+    md_short = _valid_md(length=200)
+    v2 = gate.check(md_short)
     assert v2.passed is False
     assert v2.feedback is not None and len(v2.feedback) > 10
-    assert "Rule" in v2.feedback
-
-    # Failure type 3: length.
-    md_short = _valid_md(length=400)
-    v3 = gate.check(md_short)
-    assert v3.passed is False
-    assert v3.feedback is not None and len(v3.feedback) > 10
-    assert "짧" in v3.feedback or "길이" in v3.feedback or "자" in v3.feedback
+    assert "짧" in v2.feedback or "길이" in v2.feedback or "자" in v2.feedback
 
 
 def test_gate_details_always_populated():
     """``details`` dict is always a dict; its shape depends on which check fired.
 
     Contract:
-    * On pass: all three keys present — ``missing_sections`` (empty list),
-      ``traceability`` (all True), ``length`` (int).
+    * On pass: both keys present — ``missing_sections`` (empty list), ``length`` (int).
     * On section failure: only ``missing_sections``.
-    * On traceability failure: ``missing_sections`` + ``traceability``.
-    * On length failure: all three keys (same as pass).
+    * On length failure: both keys.
     """
     gate = RevdocGate()
 
     # Pass.
     v_pass = gate.check(_valid_md(length=900))
     assert isinstance(v_pass.details, dict)
-    assert set(v_pass.details.keys()) == {"missing_sections", "traceability", "length"}
+    assert set(v_pass.details.keys()) == {"missing_sections", "length"}
 
     # Section failure.
     v_sec = gate.check(_valid_md(length=900).replace("## 관련업무\n", "## XXX\n"))
     assert isinstance(v_sec.details, dict)
     assert set(v_sec.details.keys()) == {"missing_sections"}
 
-    # Traceability failure.
-    v_tri = gate.check(
-        _valid_md(length=900).replace("- Rule: R-001 고객 등급 산출\n", "")
-    )
-    assert isinstance(v_tri.details, dict)
-    assert set(v_tri.details.keys()) == {"missing_sections", "traceability"}
-
     # Length failure.
-    v_len = gate.check(_valid_md(length=400))
+    v_len = gate.check(_valid_md(length=200))
     assert isinstance(v_len.details, dict)
-    assert set(v_len.details.keys()) == {"missing_sections", "traceability", "length"}
+    assert set(v_len.details.keys()) == {"missing_sections", "length"}
 
 
 def test_gate_custom_min_length():
-    """``RevdocGate(min_length=100)`` accepts 150-char-ish input with all structure."""
-    # Build a compact MD: every section present + triangle, aiming ~150 chars.
+    """``RevdocGate(min_length=50)`` accepts compact input with all structure."""
+    # Build a compact MD: every section present, aiming ~75 chars.
     md = (
         "## 업무목적\na\n"
         "## 처리흐름\nb\n"
         "## 입력/출력\nc\n"
         "## 규칙/예외\nd\n"
         "## 근거\ne\n"
-        "## 추적성\nRule: x\nCondition: y\nEvidence: z\n"
+        "## 추적성\n자유 서술.\n"
         "## 관련업무\nf\n"
     )
-    assert len(md) >= 100
-    # Default gate (min_length=800) must reject this.
+    assert len(md) >= 50
+    # Default gate (min_length=500) must reject this.
     assert RevdocGate().check(md).passed is False
     # Custom gate must accept it.
-    gate = RevdocGate(min_length=100)
+    gate = RevdocGate(min_length=50)
     verdict = gate.check(md)
     assert verdict.passed is True, f"custom min_length should accept; verdict={verdict}"
     assert verdict.details["length"] == len(md)

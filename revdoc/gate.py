@@ -1,19 +1,13 @@
-"""Gate for reverse-doc generation (REVDOC-05).
+"""Gate for reverse-doc generation (REVDOC-05) — simplified 2026-04-24.
 
 Validates the structural requirements of LLM-generated reverse-doc Markdown
-output before accepting it. Checks three things in strict priority order:
+output before accepting it. Checks two things in strict priority order:
 
 1. **Required sections** — the 7 mandated headers must all be present,
    at any heading level (``##``, ``###``, …). The exact Korean header text
    must match (see :data:`REQUIRED_SECTIONS`).
-2. **Traceability triangle** — ``Rule:``, ``Condition:``, ``Evidence:``
-   must all appear somewhere in the document. Both ASCII colon (``:``)
-   and fullwidth colon (``：`` U+FF1A) are accepted because Korean input
-   methods commonly produce the latter. Positional matching inside the
-   추적성 section is intentionally NOT enforced — simple presence anywhere
-   suffices (the plan does not require strict positional matching).
-3. **Minimum length** — total character count must be ≥ ``min_length``
-   (default 800, matching ``reverse_doc_v1.md`` constraint).
+2. **Minimum length** — total character count must be ≥ ``min_length``
+   (default 500, matching ``reverse_doc.md`` constraint).
 
 The gate short-circuits on the first failing check and returns a
 :class:`GateVerdict` with a ``feedback`` string — an actionable,
@@ -26,6 +20,12 @@ is populated progressively as checks run — callers should treat it as
 
 The gate is pure and synchronous. It does not touch the DB, the store,
 or any Cortex/LightRAG machinery (cf. constraints C1/C6).
+
+**Note** (simplification 2026-04-24): the previous traceability triangle
+check (Rule/Condition/Evidence keyword regex) was removed. See
+``docs/superpowers/specs/2026-04-24-revdoc-gate-simplification-design.md``
+for rationale (regex-based traceability was a sham — real traceability
+requires semantic verification, which we do not perform).
 """
 
 from __future__ import annotations
@@ -33,10 +33,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-# Exact header text required by reverse_doc_v1.md. Order here is also
-# the canonical display order but the gate does NOT enforce order —
-# only presence. (Order enforcement would be brittle against harmless
-# LLM reorderings that still satisfy the spec.)
 REQUIRED_SECTIONS = [
     "업무목적",
     "처리흐름",
@@ -55,10 +51,9 @@ class GateVerdict:
     Attributes:
         passed: True iff every check was satisfied.
         details: Measurements collected up to the point the gate stopped.
-            On pass, contains ``missing_sections`` (empty list),
-            ``traceability`` (all True), and ``length`` (int).
-            On fail, contains the measurements for checks that had run
-            by the time the failing check fired; later checks are absent.
+            On pass, contains ``missing_sections`` (empty list) and
+            ``length`` (int). On section failure: only ``missing_sections``.
+            On length failure: both keys.
         reason: Short machine-oriented failure description, ``None`` on pass.
         feedback: Korean-language retry hint for the LLM, ``None`` on pass.
     """
@@ -76,29 +71,20 @@ class RevdocGate:
     instance may be reused across many :meth:`check` calls.
     """
 
-    # Tolerates both ASCII ':' and fullwidth '：' (U+FF1A) which Korean IMEs
-    # frequently emit. ``\s*`` lets ``Rule :`` pass as well — the goal is to
-    # catch the triangle, not to police whitespace.
-    _RULE_RE = re.compile(r"Rule\s*[:：]")
-    _COND_RE = re.compile(r"Condition\s*[:：]")
-    _EVID_RE = re.compile(r"Evidence\s*[:：]")
-
-    def __init__(self, min_length: int = 800):
+    def __init__(self, min_length: int = 500):
         self.min_length = min_length
 
     def check(self, md: str) -> GateVerdict:
-        """Evaluate ``md`` against the three structural checks.
+        """Evaluate ``md`` against the two structural checks.
 
         Returns a :class:`GateVerdict` with priority-ordered failure:
-        sections > traceability > length. Never raises on empty input.
+        sections > length. Never raises on empty input.
         """
         details: dict = {}
 
         # 1. Required sections — highest priority.
         missing: list[str] = []
         for section in REQUIRED_SECTIONS:
-            # ``re.escape`` handles '/' in "입력/출력". Any heading depth
-            # (``#``..``######``) is accepted via ``#+``.
             pattern = rf"^#+\s*{re.escape(section)}"
             if not re.search(pattern, md, re.M):
                 missing.append(section)
@@ -114,34 +100,7 @@ class RevdocGate:
                 ),
             )
 
-        # 2. Traceability triangle.
-        has_rule = bool(self._RULE_RE.search(md))
-        has_cond = bool(self._COND_RE.search(md))
-        has_evid = bool(self._EVID_RE.search(md))
-        details["traceability"] = {
-            "rule": has_rule,
-            "condition": has_cond,
-            "evidence": has_evid,
-        }
-        if not (has_rule and has_cond and has_evid):
-            missing_pieces: list[str] = []
-            if not has_rule:
-                missing_pieces.append("Rule")
-            if not has_cond:
-                missing_pieces.append("Condition")
-            if not has_evid:
-                missing_pieces.append("Evidence")
-            return GateVerdict(
-                passed=False,
-                details=details,
-                reason=f"traceability triangle incomplete: missing {missing_pieces}",
-                feedback=(
-                    "추적성 섹션에 Rule/Condition/Evidence 세 항목 모두 필요. "
-                    f"누락: {missing_pieces}."
-                ),
-            )
-
-        # 3. Length.
+        # 2. Length.
         details["length"] = len(md)
         if len(md) < self.min_length:
             return GateVerdict(
