@@ -86,15 +86,34 @@ async def process_job(
                 await store.save_meta(job.id, meta, meta_ver)
 
         elif route == "docling":
-            # v3 (T14): docling-serve 경로. HWPX는 T15에서 office.py bridge로 처리.
+            # v3 (T14): docling-serve 경로. (T15) HWPX는 docling-serve가 네이티브로
+            # 파싱하지 못하므로 LibreOffice headless로 먼저 DOCX bridge를 거친다.
             from extractors.docling_ex import extract as docling_extract
-            result = await docling_extract(
-                file_bytes,
-                job.file_name,
-                config=config,
-                docling_log_store=docling_log_store,
-                job_id=job.id,
-            )
+
+            if job.source_format == "hwpx" or job.file_name.lower().endswith(".hwpx"):
+                from extractors.office import convert_hwpx_to_docx
+                docx_bytes = await convert_hwpx_to_docx(file_bytes)
+                # docling-serve에는 DOCX로 넘기되, 로그/추적을 위해 temp name 사용.
+                base = job.file_name.rsplit(".", 1)[0] if "." in job.file_name else job.file_name
+                bridged_name = base + ".docx"
+                result = await docling_extract(
+                    docx_bytes,
+                    bridged_name,
+                    config=config,
+                    docling_log_store=docling_log_store,
+                    job_id=job.id,
+                )
+                # 최종 ConvertResult는 원본 HWPX 표기로 복원한다 (사용자 관점).
+                result.source_format = "hwpx"
+                result.file_name = job.file_name
+            else:
+                result = await docling_extract(
+                    file_bytes,
+                    job.file_name,
+                    config=config,
+                    docling_log_store=docling_log_store,
+                    job_id=job.id,
+                )
             await store.save_result(job.id, result)
 
             # docling 경로도 extract와 동일하게 메타 추출
