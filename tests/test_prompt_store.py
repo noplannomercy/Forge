@@ -118,3 +118,27 @@ async def test_reverse_doc_prompt_contains_7_sections():
     ]
     for section in required_sections:
         assert section in text, f"missing section header: {section}"
+
+
+# ---------------------------------------------------------------------------
+# Normalization helper
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_prompt_text_strips_trailing_newline():
+    from job_store import _normalize_prompt_text
+    assert _normalize_prompt_text("hello\n") == "hello"
+    assert _normalize_prompt_text("hello\n\n\n") == "hello"
+
+
+def test_normalize_prompt_text_converts_crlf_to_lf():
+    from job_store import _normalize_prompt_text
+    assert _normalize_prompt_text("a\r\nb\r\nc") == "a\nb\nc"
+
+
+def test_normalize_prompt_text_preserves_real_content():
+    from job_store import _normalize_prompt_text
+    # 내부 줄바꿈은 유지, 내용 구분은 훼손되지 않음
+    assert _normalize_prompt_text("line1\nline2\nline3") == "line1\nline2\nline3"
+    # 중간 공백/탭은 보존
+    assert _normalize_prompt_text("a  b\tc") == "a  b\tc"

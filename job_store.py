@@ -428,6 +428,18 @@ class InMemoryPromptStore:
         await self.create_version(prompt_type, default_text)
 
 
+def _normalize_prompt_text(text: str) -> str:
+    """줄바꿈·trailing whitespace 차이를 정규화하여 비교 안정성 확보.
+
+    - CRLF → LF (Windows git autocrlf / editor 설정 차이 대응)
+    - 파일 끝 trailing whitespace 제거 (editor save 차이 대응)
+
+    `ensure_latest_prompt()`가 파일과 DB 텍스트를 비교할 때 사용하여
+    환경 간 autocrlf 차이로 인한 "텍스트 다름" 오판을 방지한다.
+    """
+    return text.replace("\r\n", "\n").rstrip()
+
+
 def _load_reverse_doc_prompt() -> str:
     """revdoc/prompts/reverse_doc_v1.md 텍스트를 로드.
 
