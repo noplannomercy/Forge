@@ -94,7 +94,7 @@ class Refiner:
         return cls(configs)
 
     def __init__(self, configs: dict[str, dict]):
-        self._stages: list = []
+        self._stages: list[Any] = []
         self._versions: dict[str, int] = {}
 
         for stage_name in self.STAGE_ORDER:

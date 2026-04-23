@@ -48,8 +48,14 @@ async def refiner(seeded_store):
 
 @pytest.mark.asyncio
 async def test_refiner_from_store_loads_all_configs(refiner):
+    # Drive a refine pass so we can assert on the public rule_versions
+    # surface (RefineResult.rule_versions) rather than the internal
+    # ``_versions`` attribute. Sample text clears validator thresholds
+    # (>=100 chars, >=10% Hangul, >=1 newline).
+    sample = "한국어 본문 " * 30 + "\n"
+    result = refiner.refine(sample)
     # 6 stages + validator = 7 version entries
-    assert set(refiner._versions.keys()) == {
+    assert set(result.rule_versions.keys()) == {
         "encoding",
         "newline",
         "special_char",
@@ -59,7 +65,7 @@ async def test_refiner_from_store_loads_all_configs(refiner):
         "validator",
     }
     # After seed_refine_rules, every entry should be version 1
-    for stage, version in refiner._versions.items():
+    for stage, version in result.rule_versions.items():
         assert version == 1, f"stage {stage} expected version 1, got {version}"
 
 
@@ -144,14 +150,18 @@ async def test_refine_preserves_rule_versions(seeded_store):
     )
     refiner = await Refiner.from_store(seeded_store)
 
-    assert refiner._versions["newline"] == 2
+    # Drive a refine pass to inspect rule_versions via the public surface.
+    sample = "한국어 본문 " * 30 + "\n"
+    result = refiner.refine(sample)
+
+    assert result.rule_versions["newline"] == 2
     for stage in Refiner.STAGE_ORDER:
         if stage == "newline":
             continue
-        assert refiner._versions[stage] == 1, (
+        assert result.rule_versions[stage] == 1, (
             f"stage {stage} version should be unchanged"
         )
-    assert refiner._versions["validator"] == 1
+    assert result.rule_versions["validator"] == 1
 
 
 # --------------------------------------------------------------------------- #
