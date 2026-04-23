@@ -100,6 +100,63 @@ class VLMClient:
                 error=str(last_error),
             )
 
+    async def process_text(
+        self,
+        text: str,
+        prompt: str,
+        purpose: str,
+        model: str | None = None,
+    ) -> str:
+        """텍스트 전용 LLM 호출 (비전 없음). Semaphore + 3회 retry를 재사용.
+
+        Args:
+            text: user 메시지 본문 (분석 대상 코드/문서).
+            prompt: system 프롬프트.
+            purpose: 로깅 용도 (예: "reverse_doc"). 현재는 future-log hook.
+            model: 모델 오버라이드. 미지정 시 ``config.vlm_model`` 사용.
+
+        Returns:
+            LLM이 반환한 텍스트 응답.
+
+        Raises:
+            RuntimeError: 3회 retry 이후에도 실패한 경우. process_batch와 달리
+                placeholder를 반환하지 않고 예외를 올려 호출자(=generator)가
+                gate 흐름 밖의 실패로 구분해 처리할 수 있게 한다.
+        """
+        chosen_model = model or self.config.vlm_model
+        async with self.semaphore:  # S1
+            last_error: Exception | None = None
+            for attempt in range(MAX_RETRIES):
+                try:
+                    payload = {
+                        "model": chosen_model,
+                        "messages": [
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": text},
+                        ],
+                        "max_tokens": 4096,
+                    }
+                    headers = {"Content-Type": "application/json"}
+                    if self.config.vlm_api_key:
+                        headers["Authorization"] = f"Bearer {self.config.vlm_api_key}"
+
+                    response = await self.client.post(
+                        self.config.vlm_url, json=payload, headers=headers,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    return data["choices"][0]["message"]["content"]
+
+                except Exception as e:
+                    last_error = e
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(RETRY_DELAYS[attempt])
+
+            raise RuntimeError(
+                f"process_text failed after {MAX_RETRIES} attempts "
+                f"(purpose={purpose}, model={chosen_model}): {last_error}"
+            )
+
     async def process_document(self, images: list[bytes]) -> tuple[DocumentResult, list[BatchResult]]:
         """전체 이미지를 batch_size씩 나눠서 semantic 처리. (DocumentResult, batch_results) 반환."""
         batch_size = self.config.vlm_batch_size
