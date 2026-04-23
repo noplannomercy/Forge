@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -377,6 +378,82 @@ class PromptStore:
                    VALUES ($1, 1, $2, TRUE) RETURNING *""",
                 prompt_type, default_text,
             )
+
+
+class InMemoryPromptStore:
+    """In-memory prompt store — DB 없는 환경(로컬 InMemory, 테스트)용.
+
+    PostgresPromptStore(`PromptStore`)와 동일한 메서드 시그니처를 제공하여
+    `seed_prompts()`가 두 구현 모두에 대해 동작하도록 한다 (CF-5).
+    """
+
+    def __init__(self):
+        # prompt_type -> list of {id, type, version, text, is_active, created_at}, newest first
+        self._data: dict[str, list[dict]] = {}
+        self._next_id = 1
+
+    async def get_active(self, prompt_type: str) -> dict | None:
+        for entry in self._data.get(prompt_type, []):
+            if entry["is_active"]:
+                return dict(entry)
+        return None
+
+    async def list_all(self) -> list[dict]:
+        out: list[dict] = []
+        for prompt_type in sorted(self._data.keys()):
+            for entry in self._data[prompt_type]:
+                out.append(dict(entry))
+        return out
+
+    async def create_version(self, prompt_type: str, text: str) -> dict:
+        versions = self._data.setdefault(prompt_type, [])
+        for entry in versions:
+            entry["is_active"] = False
+        new_version = (max((e["version"] for e in versions), default=0)) + 1
+        new_entry = {
+            "id": self._next_id,
+            "type": prompt_type,
+            "version": new_version,
+            "text": text,
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+        }
+        self._next_id += 1
+        versions.insert(0, new_entry)
+        return dict(new_entry)
+
+    async def seed_if_empty(self, prompt_type: str, default_text: str) -> None:
+        if self._data.get(prompt_type):
+            return
+        await self.create_version(prompt_type, default_text)
+
+
+def _load_reverse_doc_prompt() -> str:
+    """revdoc/prompts/reverse_doc_v1.md 텍스트를 로드.
+
+    파일 누락 시 RuntimeError. 하드코딩 fallback 없음 — 배포 누락 즉시 감지.
+    """
+    path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "revdoc",
+        "prompts",
+        "reverse_doc_v1.md",
+    )
+    if not os.path.isfile(path):
+        raise RuntimeError(f"reverse_doc prompt file missing: {path}")
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+async def seed_prompts(store) -> None:
+    """reverse_doc 프롬프트를 store에 시드 (idempotent, seed_if_empty 기반).
+
+    `PromptStore`(Postgres) / `InMemoryPromptStore` 둘 다 동일 시그니처 수용.
+    기존 semantic/meta_extract 시드 호출 뒤에 부르거나, InMemory 분기에서
+    단독 호출 가능.
+    """
+    reverse_doc_text = _load_reverse_doc_prompt()
+    await store.seed_if_empty("reverse_doc", reverse_doc_text)
 
 
 # ---------------------------------------------------------------------------

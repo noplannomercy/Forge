@@ -56,7 +56,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
 
         if config.database_url:
             import asyncpg
-            from job_store import PostgresJobStore, VLMLogStore, PromptStore, PostgresRefineRuleStore
+            from job_store import PostgresJobStore, VLMLogStore, PromptStore, PostgresRefineRuleStore, seed_prompts
             from vlm import SEMANTIC_PROMPT
             from meta import META_PROMPT
             pool = await asyncpg.create_pool(config.database_url)
@@ -70,6 +70,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             a.state.prompt_store = PromptStore(pool)
             await a.state.prompt_store.seed_if_empty("semantic", SEMANTIC_PROMPT)
             await a.state.prompt_store.seed_if_empty("meta_extract", META_PROMPT)
+            await seed_prompts(a.state.prompt_store)
 
             # Load active prompts into cache
             semantic = await a.state.prompt_store.get_active("semantic")
@@ -86,7 +87,13 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
 
             a.state.refine_rule_store = PostgresRefineRuleStore(pool)
         else:
-            from meta import MetaExtractor
+            from job_store import InMemoryPromptStore, seed_prompts
+            from vlm import SEMANTIC_PROMPT
+            from meta import META_PROMPT, MetaExtractor
+            a.state.prompt_store = InMemoryPromptStore()
+            await a.state.prompt_store.seed_if_empty("semantic", SEMANTIC_PROMPT)
+            await a.state.prompt_store.seed_if_empty("meta_extract", META_PROMPT)
+            await seed_prompts(a.state.prompt_store)
             a.state.meta_extractor = MetaExtractor(config)
             a.state.refine_rule_store = InMemoryRefineRuleStore()
 
