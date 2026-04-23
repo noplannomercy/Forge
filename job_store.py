@@ -481,14 +481,18 @@ def _load_reverse_doc_prompt() -> str:
 
 
 async def seed_prompts(store) -> None:
-    """reverse_doc 프롬프트를 store에 시드 (idempotent, seed_if_empty 기반).
+    """reverse_doc 프롬프트를 최신 파일 내용으로 보장.
 
-    `PromptStore`(Postgres) / `InMemoryPromptStore` 둘 다 동일 시그니처 수용.
-    기존 semantic/meta_extract 시드 호출 뒤에 부르거나, InMemory 분기에서
-    단독 호출 가능.
+    설계 주의 — 시드 메커니즘 병행:
+    * `reverse_doc`: `ensure_latest_prompt` 사용 — 내용 튜닝이 잦고 파일이 SSoT.
+    * `semantic_batch`, `meta_extract`: 호출처(`app.py` lifespan)에서 `seed_if_empty`
+      사용 — 초기 시드 후 변경은 Admin API(`POST /prompts`)로 관리. 자동 덮어쓰기가
+      오히려 운영 리스크.
+
+    두 패턴이 공존하는 것은 의도된 설계. 통합은 스코프 밖 (스펙 §2.2, §9 참조).
     """
     reverse_doc_text = _load_reverse_doc_prompt()
-    await store.seed_if_empty("reverse_doc", reverse_doc_text)
+    await ensure_latest_prompt(store, "reverse_doc", reverse_doc_text)
 
 
 # ---------------------------------------------------------------------------

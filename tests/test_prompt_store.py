@@ -228,3 +228,46 @@ async def test_ensure_latest_prompt_detects_real_content_change():
     assert len(all_versions) == 2
     active = await store.get_active("demo")
     assert active["text"] == "hello world"
+
+
+# ---------------------------------------------------------------------------
+# seed_prompts auto-upgrade integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_seed_prompts_auto_upgrades_when_file_changes(monkeypatch):
+    """파일 내용이 DB active와 다르면 seed_prompts가 새 버전 생성."""
+    from job_store import seed_prompts, InMemoryPromptStore
+
+    store = InMemoryPromptStore()
+    # 1회차: 현재 파일 내용으로 시드
+    await seed_prompts(store)
+    v1_text = (await store.get_active("reverse_doc"))["text"]
+
+    # 파일 로더를 mock — 다른 텍스트 리턴
+    monkeypatch.setattr(
+        "job_store._load_reverse_doc_prompt",
+        lambda: v1_text + "\n\n# 추가된 내용\n",
+    )
+    await seed_prompts(store)
+
+    active = await store.get_active("reverse_doc")
+    assert active["version"] == 2
+    assert "추가된 내용" in active["text"]
+
+    all_versions = [p for p in await store.list_all() if p["type"] == "reverse_doc"]
+    assert len(all_versions) == 2
+
+
+@pytest.mark.asyncio
+async def test_seed_prompts_noop_on_same_content():
+    """동일 내용으로 2회 호출 → version 1 유지 (정규화 덕분)."""
+    from job_store import seed_prompts, InMemoryPromptStore
+
+    store = InMemoryPromptStore()
+    await seed_prompts(store)
+    await seed_prompts(store)  # 같은 파일 두 번째 로드
+
+    all_versions = [p for p in await store.list_all() if p["type"] == "reverse_doc"]
+    assert len(all_versions) == 1
