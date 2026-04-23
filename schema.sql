@@ -58,5 +58,17 @@ CREATE TABLE IF NOT EXISTS forge_prompts (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_forge_prompts_active
     ON forge_prompts(type) WHERE is_active = TRUE;
 
+CREATE TABLE IF NOT EXISTS forge_refine_rules (
+    id          SERIAL PRIMARY KEY,
+    stage       VARCHAR(30) NOT NULL,  -- encoding/newline/special_char/frontmatter/codefence/traceability/validator
+    version     INT NOT NULL,
+    config      JSONB NOT NULL,
+    is_active   BOOLEAN DEFAULT TRUE,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_forge_refine_rules_active
+    ON forge_refine_rules(stage) WHERE is_active = TRUE;
+
 -- 마이그레이션: 기존 테이블에 deleted_at 추가
 ALTER TABLE forge_jobs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;

@@ -374,3 +374,148 @@ class PromptStore:
                    VALUES ($1, 1, $2, TRUE) RETURNING *""",
                 prompt_type, default_text,
             )
+
+
+# ---------------------------------------------------------------------------
+# RefineRuleStore — v3 LightRAG extension (REFINE-06)
+# ---------------------------------------------------------------------------
+
+class RefineRuleStore(ABC):
+    @abstractmethod
+    async def active(self, stage: str) -> dict:
+        """Return the active config dict for a stage, merged with 'version' key.
+
+        Raises LookupError if no active rule exists for the stage.
+        """
+        ...
+
+    @abstractmethod
+    async def upsert(self, stage: str, config: dict) -> int:
+        """Insert a new version for `stage`, marking it active and deactivating prior.
+
+        Returns the new version number.
+        """
+        ...
+
+    @abstractmethod
+    async def list_versions(self, stage: str) -> list[dict]:
+        """Return all versions for `stage`, newest first.
+
+        Each item: {version, config, is_active, created_at}.
+        """
+        ...
+
+
+class InMemoryRefineRuleStore(RefineRuleStore):
+    def __init__(self):
+        # stage -> list of {version, config, is_active, created_at}, newest first
+        self._rules: dict[str, list[dict]] = {}
+
+    async def active(self, stage: str) -> dict:
+        versions = self._rules.get(stage, [])
+        for entry in versions:
+            if entry["is_active"]:
+                return {**entry["config"], "version": entry["version"]}
+        raise LookupError(f"No active refine rule for stage: {stage}")
+
+    async def upsert(self, stage: str, config: dict) -> int:
+        versions = self._rules.setdefault(stage, [])
+        # Deactivate prior active
+        for entry in versions:
+            entry["is_active"] = False
+        next_version = (max((e["version"] for e in versions), default=0)) + 1
+        versions.insert(0, {
+            "version": next_version,
+            "config": dict(config),
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+        })
+        return next_version
+
+    async def list_versions(self, stage: str) -> list[dict]:
+        versions = self._rules.get(stage, [])
+        # Already stored newest-first; return shallow copies to prevent mutation leak
+        return [dict(entry) for entry in versions]
+
+
+class PostgresRefineRuleStore(RefineRuleStore):
+    def __init__(self, pool: asyncpg.Pool):
+        self._pool = pool
+
+    @staticmethod
+    def _parse_config(value) -> dict:
+        if isinstance(value, str):
+            return json.loads(value)
+        return value or {}
+
+    async def active(self, stage: str) -> dict:
+        row = await self._pool.fetchrow(
+            "SELECT version, config FROM forge_refine_rules WHERE stage = $1 AND is_active = TRUE",
+            stage,
+        )
+        if row is None:
+            raise LookupError(f"No active refine rule for stage: {stage}")
+        config = self._parse_config(row["config"])
+        return {**config, "version": row["version"]}
+
+    async def upsert(self, stage: str, config: dict) -> int:
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                max_version = await conn.fetchval(
+                    "SELECT MAX(version) FROM forge_refine_rules WHERE stage = $1",
+                    stage,
+                )
+                new_version = (max_version or 0) + 1
+                await conn.execute(
+                    "UPDATE forge_refine_rules SET is_active = FALSE "
+                    "WHERE stage = $1 AND is_active = TRUE",
+                    stage,
+                )
+                await conn.execute(
+                    """INSERT INTO forge_refine_rules (stage, version, config, is_active)
+                       VALUES ($1, $2, $3::jsonb, TRUE)""",
+                    stage, new_version, json.dumps(config),
+                )
+                return new_version
+
+    async def list_versions(self, stage: str) -> list[dict]:
+        rows = await self._pool.fetch(
+            """SELECT version, config, is_active, created_at
+               FROM forge_refine_rules WHERE stage = $1
+               ORDER BY version DESC""",
+            stage,
+        )
+        return [
+            {
+                "version": r["version"],
+                "config": self._parse_config(r["config"]),
+                "is_active": r["is_active"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+
+REFINE_RULE_DEFAULTS = {
+    "encoding": {"try_order": ["utf-8", "utf-8-sig", "cp949", "euc-kr"]},
+    "newline": {"patterns": [r"\\n", r"\\r\\n"], "replace_with": "\n"},
+    "special_char": {"map": {"~": "∼", "·": "·"}, "normalize_width": True},
+    "frontmatter": {"delimiters": ["---", "+++"], "keep_keys": []},
+    "codefence": {"strip": False, "keep_lang": True},
+    "traceability": {"pattern": r"(\w+)\s*↔\s*(\w+)", "replace": r"\1은 \2에 연결된다."},
+    "validator": {
+        "require_utf8": True,
+        "min_newlines": 1,
+        "min_korean_ratio": 0.1,
+        "min_length": 100,
+    },
+}
+
+
+async def seed_refine_rules(store: RefineRuleStore) -> None:
+    """Seed each stage with its default config if no active version exists."""
+    for stage, config in REFINE_RULE_DEFAULTS.items():
+        try:
+            await store.active(stage)
+        except LookupError:
+            await store.upsert(stage, config)
