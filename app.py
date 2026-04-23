@@ -56,7 +56,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
 
         if config.database_url:
             import asyncpg
-            from job_store import PostgresJobStore, VLMLogStore, PromptStore, PostgresRefineRuleStore, seed_prompts
+            from job_store import PostgresJobStore, VLMLogStore, PromptStore, PostgresRefineRuleStore, PostgresDoclingLogStore, seed_prompts
             from vlm import SEMANTIC_PROMPT
             from meta import META_PROMPT
             pool = await asyncpg.create_pool(config.database_url)
@@ -67,6 +67,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
 
             a.state.store = PostgresJobStore(pool)
             a.state.vlm_log_store = VLMLogStore(pool)
+            a.state.docling_log_store = PostgresDoclingLogStore(pool)
             a.state.prompt_store = PromptStore(pool)
             await a.state.prompt_store.seed_if_empty("semantic", SEMANTIC_PROMPT)
             await a.state.prompt_store.seed_if_empty("meta_extract", META_PROMPT)
@@ -87,7 +88,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
 
             a.state.refine_rule_store = PostgresRefineRuleStore(pool)
         else:
-            from job_store import InMemoryPromptStore, seed_prompts
+            from job_store import InMemoryPromptStore, InMemoryDoclingLogStore, seed_prompts
             from vlm import SEMANTIC_PROMPT
             from meta import META_PROMPT, MetaExtractor
             a.state.prompt_store = InMemoryPromptStore()
@@ -96,6 +97,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
             await seed_prompts(a.state.prompt_store)
             a.state.meta_extractor = MetaExtractor(config)
             a.state.refine_rule_store = InMemoryRefineRuleStore()
+            a.state.docling_log_store = InMemoryDoclingLogStore()
 
         await seed_refine_rules(a.state.refine_rule_store)
         a.state.refiner = await Refiner.from_store(a.state.refine_rule_store)

@@ -584,6 +584,58 @@ class PostgresRefineRuleStore(RefineRuleStore):
         ]
 
 
+# ---------------------------------------------------------------------------
+# DoclingLogStore — v3 LightRAG extension (DOCLING-08)
+# ---------------------------------------------------------------------------
+
+class DoclingLogStore(ABC):
+    @abstractmethod
+    async def insert(
+        self,
+        *,
+        job_id,
+        pages: int,
+        latency_ms: int,
+        status_code: int | None,
+        fallback: bool,
+        reason: str | None,
+    ) -> None:
+        ...
+
+
+class InMemoryDoclingLogStore(DoclingLogStore):
+    def __init__(self):
+        self._rows: list[dict] = []
+
+    async def insert(self, *, job_id, pages, latency_ms, status_code, fallback, reason):
+        self._rows.append({
+            "job_id": job_id,
+            "pages": pages,
+            "latency_ms": latency_ms,
+            "status_code": status_code,
+            "fallback": fallback,
+            "fallback_reason": reason,
+            "created_at": datetime.now(timezone.utc),
+        })
+
+    async def list_all(self) -> list[dict]:
+        return [dict(r) for r in self._rows]
+
+
+class PostgresDoclingLogStore(DoclingLogStore):
+    def __init__(self, pool: asyncpg.Pool):
+        self._pool = pool
+
+    async def insert(self, *, job_id, pages, latency_ms, status_code, fallback, reason):
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO forge_docling_logs
+                       (job_id, pages, latency_ms, status_code, fallback, fallback_reason)
+                   VALUES ($1, $2, $3, $4, $5, $6)""",
+                job_id, pages, latency_ms, status_code, fallback, reason,
+            )
+
+
 REFINE_RULE_DEFAULTS = {
     "encoding": {"try_order": ["utf-8-sig", "utf-8", "cp949", "euc-kr"]},
     "newline": {"patterns": [r"\\r\\n", r"\\n"], "replace_with": "\n"},
