@@ -165,6 +165,15 @@ async def process_job(
                 "forge_status": updated_job.status,
                 "forge_error": updated_job.error,
             }
+            # Consumer-agnostic field rename (e.g. LightRAG content→text, file_name→file_source).
+            # C6: no consumer-specific branching — generic rename only.
+            if config.callback_field_map:
+                import json
+                rename_map = json.loads(config.callback_field_map)
+                payload = {rename_map.get(k, k): v for k, v in payload.items()}
+                if not config.callback_keep_unmapped:
+                    payload = {k: v for k, v in payload.items() if k in rename_map.values()}
+
             cb_headers = {}
             if config.callback_api_key:
                 cb_headers["X-API-Key"] = config.callback_api_key

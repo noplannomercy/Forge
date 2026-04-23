@@ -34,7 +34,7 @@ class ConvertResult(BaseModel):
     pages: int
     file_name: str
     source_format: str
-    route: str  # "vlm" | "extract"
+    route: str  # "vlm" | "extract" | "docling" | "reverse_doc" | "refine"
     quality: Quality
 
 

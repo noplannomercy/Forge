@@ -26,4 +26,12 @@ class Config(BaseSettings):
     # Callback 인증 (Cortex X-API-Key)
     callback_api_key: str = ""
 
+    # Callback payload field rename (consumer-agnostic).
+    # JSON string, e.g. {"content":"text","file_name":"file_source"}.
+    callback_field_map: str | None = None
+    callback_keep_unmapped: bool = False
+
+    # REVDOC dedicated model. None → fallback to vlm_model.
+    revdoc_model: str | None = None
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

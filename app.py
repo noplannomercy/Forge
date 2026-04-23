@@ -108,7 +108,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     @app.post("/convert", summary="문서 변환", tags=["변환"])
     async def convert(
         file: UploadFile = File(..., description="변환할 파일 (PDF, DOCX, PPTX, XLSX, 이미지)"),
-        route: str | None = Query(None, pattern="^(extract|vlm)$", description="경로 강제 지정 (extract 또는 vlm)"),
+        route: str | None = Query(None, pattern="^(extract|vlm|docling)$", description="경로 강제 지정 (extract | vlm | docling)"),
         requested_by: str | None = Query(None, description="요청자 식별 (예: cortex-api)"),
         callback_url: str | None = Query(None, description="완료/실패 시 결과를 POST할 URL"),
         domain: str = Query("general", description="문서 도메인 (callback payload에 포함, Cortex 인덱싱 분류용)"),
@@ -174,7 +174,7 @@ def create_app(store: JobStore | None = None, config: Config | None = None) -> F
     @app.post("/batch", summary="배치 변환", tags=["변환"])
     async def batch(
         files: List[UploadFile] = File(..., description="변환할 파일 목록"),
-        route: str | None = Query(None, pattern="^(extract|vlm)$", description="경로 강제 지정"),
+        route: str | None = Query(None, pattern="^(extract|vlm|docling)$", description="경로 강제 지정"),
         requested_by: str | None = Query(None, description="요청자 식별"),
         callback_url: str | None = Query(None, description="완료/실패 시 결과를 POST할 URL"),
         domain: str = Query("general", description="문서 도메인 (callback payload에 포함)"),
