@@ -22,9 +22,10 @@ async def test_active_raises_when_missing(store):
 async def test_seed_and_active(store):
     await seed_refine_rules(store)
 
-    # encoding stage: try_order[0] == "utf-8"
+    # encoding stage: try_order[0] == "utf-8-sig" (strictly subsumes utf-8
+    # for BOM handling — see REFINE_RULE_DEFAULTS).
     encoding = await store.active("encoding")
-    assert encoding["try_order"][0] == "utf-8"
+    assert encoding["try_order"][0] == "utf-8-sig"
     assert "version" in encoding
 
     # validator stage: min_length == 100

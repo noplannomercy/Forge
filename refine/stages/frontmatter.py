@@ -20,7 +20,10 @@ class FrontmatterStage:
 
     def apply(self, text: str) -> tuple[str, StageReport]:
         for d in self.delimiters:
-            if text.lstrip().startswith(d):
+            # Strict: frontmatter must start at byte 0 — leading whitespace
+            # would make `find(..., len(d))` search the un-stripped text from
+            # an offset that doesn't correspond to the delimiter's real position.
+            if text.startswith(d):
                 end = text.find(f"\n{d}", len(d))
                 if end > 0:
                     stripped = text[end + len(d) + 1:].lstrip("\n")

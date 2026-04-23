@@ -18,7 +18,9 @@ class EncodingStage:
         for enc in self.try_order:
             try:
                 text = raw.decode(enc)
-                return text, StageReport("encoding", True, 0, {"from": enc})
+                # changes=1 to reflect the bytes→str transformation; downstream
+                # aggregators that sum `changes` must see this stage as active.
+                return text, StageReport("encoding", True, 1, {"from": enc})
             except UnicodeDecodeError:
                 continue
         raise ValueError(f"decode failed (tried {self.try_order})")

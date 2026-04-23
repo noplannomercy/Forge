@@ -31,6 +31,9 @@ def test_encoding_cp949_to_utf8():
     assert isinstance(report, StageReport)
     assert report.stage == "encoding"
     assert report.applied is True
+    # Successful bytes→str transformation counts as a change so downstream
+    # aggregators that sum `r.changes` can detect the encoding pass.
+    assert report.changes == 1
     assert report.details["from"] == "cp949"
 
 
@@ -83,6 +86,17 @@ def test_newline_mixed_crlf_and_lf_patterns():
     # Longer pattern first so r"\r\n" is consumed before the bare r"\n".
     stage = NewlineStage({"patterns": [r"\\r\\n", r"\\n"], "replace_with": "\n"})
     text, report = stage.apply(r"line1\r\nline2\nline3")
+    assert text == "line1\nline2\nline3"
+    assert report.changes == 2
+
+
+def test_newline_default_config_handles_crlf_without_dangling_cr():
+    # Regression: the default `patterns` list must place r"\r\n" before r"\n"
+    # so the shorter pattern does not consume the `\n` half of a CRLF pair
+    # and leave a stray `\r` behind.
+    stage = NewlineStage(REFINE_RULE_DEFAULTS["newline"])
+    text, report = stage.apply(r"line1\r\nline2\r\nline3")
+    assert "\r" not in text
     assert text == "line1\nline2\nline3"
     assert report.changes == 2
 
@@ -163,6 +177,19 @@ def test_frontmatter_supports_alternate_delimiter():
     assert text == "# Body"
     assert report.applied is True
     assert report.details["delimiter"] == "+++"
+
+
+def test_frontmatter_strict_start_leaves_leading_whitespace_untouched():
+    # YAML/TOML frontmatter must start at byte 0 — leading whitespace means
+    # this is not a valid frontmatter block and the text is returned unchanged.
+    # (Historically this path called `text.lstrip().startswith(d)` which
+    # silently mismatched the `find()` offset, corrupting output.)
+    stage = FrontmatterStage(REFINE_RULE_DEFAULTS["frontmatter"])
+    doc = "  \n---\nkey: value\n---\nbody"
+    text, report = stage.apply(doc)
+    assert text == doc
+    assert report.applied is False
+    assert report.changes == 0
 
 
 # ---------------------------------------------------------------------------

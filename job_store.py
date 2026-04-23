@@ -508,8 +508,8 @@ class PostgresRefineRuleStore(RefineRuleStore):
 
 
 REFINE_RULE_DEFAULTS = {
-    "encoding": {"try_order": ["utf-8", "utf-8-sig", "cp949", "euc-kr"]},
-    "newline": {"patterns": [r"\\n", r"\\r\\n"], "replace_with": "\n"},
+    "encoding": {"try_order": ["utf-8-sig", "utf-8", "cp949", "euc-kr"]},
+    "newline": {"patterns": [r"\\r\\n", r"\\n"], "replace_with": "\n"},
     "special_char": {"map": {"~": "∼", "·": "·"}, "normalize_width": True},
     "frontmatter": {"delimiters": ["---", "+++"], "keep_keys": []},
     "codefence": {"strip": False, "keep_lang": True},

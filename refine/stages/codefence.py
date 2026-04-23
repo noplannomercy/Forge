@@ -12,7 +12,10 @@ from refine.stages import StageReport
 
 
 class CodefenceStage:
-    _PATTERN = re.compile(r"```.*?\n.*?```", re.DOTALL)
+    # `[^\n]*` captures an optional language tag on the opening fence line
+    # (e.g. ```python); `.*?` with DOTALL then captures the multiline body
+    # up to the closing fence.
+    _PATTERN = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
 
     def __init__(self, config: dict):
         self.strip: bool = config.get("strip", False)
