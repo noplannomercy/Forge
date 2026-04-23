@@ -37,6 +37,10 @@ class Config(BaseSettings):
     # REVDOC 전용 모델 (미설정 시 VLM_MODEL fallback)
     revdoc_model: str | None = None
 
+    # Docling-Serve (remote HTTP) — see docs/plans Late Update for rationale
+    docling_serve_url: str | None = None  # e.g. "http://193.168.195.222:5001"
+    docling_api_key: str | None = None    # optional; docling-serve's X-Api-Key header
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @field_validator("callback_field_map")

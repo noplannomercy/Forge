@@ -102,3 +102,19 @@ def test_config_rejects_non_string_values_callback_field_map():
     """value가 문자열이 아니면 거부."""
     with pytest.raises(ValueError, match="CALLBACK_FIELD_MAP"):
         Config(callback_field_map='{"content": 123}')
+
+
+def test_config_docling_serve_url_default_none():
+    """DOCLING_SERVE_URL 미설정 시 None (pypdfium2 fallback 조건)."""
+    c = Config()
+    assert c.docling_serve_url is None
+    assert c.docling_api_key is None
+
+
+def test_config_docling_serve_url_from_env(monkeypatch):
+    """DOCLING_SERVE_URL/DOCLING_API_KEY 환경변수 로드."""
+    monkeypatch.setenv("DOCLING_SERVE_URL", "http://docling-serve:5001")
+    monkeypatch.setenv("DOCLING_API_KEY", "secret")
+    c = Config(_env_file=None)  # bypass .env loading to isolate env vars
+    assert c.docling_serve_url == "http://docling-serve:5001"
+    assert c.docling_api_key == "secret"
