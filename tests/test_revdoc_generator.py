@@ -72,10 +72,8 @@ def _valid_md(pad_chars: int = 900) -> str:
         "## 입력/출력\n- 입력: customer_id (str)\n- 출력: tier (str)\n\n"
         "## 규칙/예외\n- total_amount > 1000 이면 GOLD\n- 예외 시 BRONZE\n\n"
         "## 근거\n사내 고객 정책 문서 R-001 근거로 작성.\n\n"
-        "## 추적성\n"
-        "- Rule: R-001 고객 등급 산출\n"
-        "- Condition: total_amount > 1000 AND tier = 'GOLD'\n"
-        "- Evidence: customer_tier.py:45\n\n"
+        "## 추적성\n이 코드는 R-001 고객 등급 산출 업무 규칙을 구현하며, "
+        "근거는 사내 정책 문서에서 확인할 수 있다.\n\n"
         "## 관련업무\n- 선행: 주문 집계\n- 후행: 혜택 부여\n"
     )
     # Korean filler ensures we clear both the gate length (>=800) and the
