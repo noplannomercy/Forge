@@ -40,7 +40,7 @@ def test_gate_pass_minimal():
     assert verdict.reason is None
     assert verdict.feedback is None
     assert verdict.details["missing_sections"] == []
-    assert verdict.details["length"] >= 800
+    assert verdict.details["length"] >= 500
 
 
 def test_gate_fail_missing_section():

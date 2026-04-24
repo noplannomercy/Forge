@@ -90,7 +90,7 @@ async def test_reverse_doc_seed_upserts():
 
 @pytest.mark.asyncio
 async def test_reverse_doc_seed_idempotent():
-    """seed_prompts()를 두 번 호출해도 v2 중복 생성되지 않는다 (seed_if_empty 기반)."""
+    """seed_prompts()를 두 번 호출해도 중복 생성되지 않는다 (ensure_latest_prompt 기반 — 정규화 비교로 동일 내용 no-op)."""
     store = InMemoryPromptStore()
     await seed_prompts(store)
     await seed_prompts(store)
