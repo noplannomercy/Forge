@@ -132,6 +132,8 @@ ruff check .
 | docs/superpowers/plans/2026-04-09-forge-callback.md | callback URL 플랜 (2 Task) |
 | docs/superpowers/specs/2026-04-09-forge-hwpx-extractor-design.md | HWPX extractor 스펙 |
 | docs/superpowers/plans/2026-04-09-forge-hwpx-extractor.md | HWPX extractor 플랜 (2 Task) |
+| docs/superpowers/specs/2026-04-24-revdoc-gate-simplification-design.md | /reverse-doc Gate 단순화 스펙 |
+| docs/superpowers/plans/2026-04-24-revdoc-gate-simplification.md | /reverse-doc Gate 단순화 플랜 (8 Task) |
 | docs/2026-04-07-document-converter-service-v2.md | office-hours 원본 설계 |
 | docs/DEPLOYMENT.md | 배포/운영 매뉴얼 (로컬/도커/AWS, 환경변수, 트러블슈팅) |
 | TODO.md | 전체 로드맵 + 진행 상태 (specs/plans의 상위 문서) |

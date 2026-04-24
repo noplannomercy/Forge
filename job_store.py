@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -10,6 +12,8 @@ from models import ConvertResult, Job, JobStatus, Quality
 
 if TYPE_CHECKING:
     import asyncpg
+
+logger = logging.getLogger(__name__)
 
 
 class JobStore(ABC):
@@ -374,3 +378,324 @@ class PromptStore:
                    VALUES ($1, 1, $2, TRUE) RETURNING *""",
                 prompt_type, default_text,
             )
+
+
+class InMemoryPromptStore:
+    """In-memory prompt store — DB 없는 환경(로컬 InMemory, 테스트)용.
+
+    PostgresPromptStore(`PromptStore`)와 동일한 메서드 시그니처를 제공하여
+    `seed_prompts()`가 두 구현 모두에 대해 동작하도록 한다 (CF-5).
+    """
+
+    def __init__(self):
+        # prompt_type -> list of {id, type, version, text, is_active, created_at}, newest first
+        self._data: dict[str, list[dict]] = {}
+        self._next_id = 1
+
+    async def get_active(self, prompt_type: str) -> dict | None:
+        for entry in self._data.get(prompt_type, []):
+            if entry["is_active"]:
+                return dict(entry)
+        return None
+
+    async def list_all(self) -> list[dict]:
+        out: list[dict] = []
+        for prompt_type in sorted(self._data.keys()):
+            for entry in self._data[prompt_type]:
+                out.append(dict(entry))
+        return out
+
+    async def create_version(self, prompt_type: str, text: str) -> dict:
+        versions = self._data.setdefault(prompt_type, [])
+        for entry in versions:
+            entry["is_active"] = False
+        new_version = (max((e["version"] for e in versions), default=0)) + 1
+        new_entry = {
+            "id": self._next_id,
+            "type": prompt_type,
+            "version": new_version,
+            "text": text,
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+        }
+        self._next_id += 1
+        versions.insert(0, new_entry)
+        return dict(new_entry)
+
+    async def seed_if_empty(self, prompt_type: str, default_text: str) -> None:
+        if self._data.get(prompt_type):
+            return
+        await self.create_version(prompt_type, default_text)
+
+
+def _normalize_prompt_text(text: str) -> str:
+    """줄바꿈·trailing whitespace 차이를 정규화하여 비교 안정성 확보.
+
+    - CRLF → LF (Windows git autocrlf / editor 설정 차이 대응)
+    - 파일 끝 trailing whitespace 제거 (editor save 차이 대응)
+
+    `ensure_latest_prompt()`가 파일과 DB 텍스트를 비교할 때 사용하여
+    환경 간 autocrlf 차이로 인한 "텍스트 다름" 오판을 방지한다.
+    """
+    return text.replace("\r\n", "\n").rstrip()
+
+
+async def ensure_latest_prompt(store, prompt_type: str, current_text: str) -> None:
+    """파일 내용이 DB active 버전과 다르면 새 버전 생성(auto-active).
+
+    동작:
+    * DB에 type=prompt_type인 active 프롬프트가 없으면 → create_version(v1).
+    * 있고 _normalize_prompt_text로 비교해 동일하면 → no-op (부팅 시마다 불필요한
+      write 방지, 줄바꿈/trailing whitespace 차이는 무시).
+    * 있고 정규화 비교 결과 다르면 → create_version(v+1). `create_version`이
+      기존 active를 자동 비활성화하므로 운영자 개입 불필요.
+
+    `seed_if_empty`와 달리 파일 쪽이 단일 진실 공급원(SSoT)임을 가정.
+    정규화 덕분에 `git config core.autocrlf` 설정 차이·editor trailing newline
+    차이로 버전 번호가 부팅마다 증가하는 문제를 방지.
+    """
+    active = await store.get_active(prompt_type)
+    if active is None:
+        await store.create_version(prompt_type, current_text)
+        return
+    if _normalize_prompt_text(active["text"]) == _normalize_prompt_text(current_text):
+        return
+    await store.create_version(prompt_type, current_text)
+
+
+def _load_reverse_doc_prompt() -> str:
+    """revdoc/prompts/reverse_doc.md 텍스트를 로드.
+
+    파일 누락 시 RuntimeError. 하드코딩 fallback 없음 — 배포 누락 즉시 감지.
+    """
+    path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "revdoc",
+        "prompts",
+        "reverse_doc.md",
+    )
+    if not os.path.isfile(path):
+        raise RuntimeError(f"reverse_doc prompt file missing: {path}")
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+async def seed_prompts(store) -> None:
+    """reverse_doc 프롬프트를 최신 파일 내용으로 보장.
+
+    설계 주의 — 시드 메커니즘 병행:
+    * `reverse_doc`: `ensure_latest_prompt` 사용 — 내용 튜닝이 잦고 파일이 SSoT.
+    * `semantic_batch`, `meta_extract`: 호출처(`app.py` lifespan)에서 `seed_if_empty`
+      사용 — 초기 시드 후 변경은 Admin API(`POST /prompts`)로 관리. 자동 덮어쓰기가
+      오히려 운영 리스크.
+
+    두 패턴이 공존하는 것은 의도된 설계. 통합은 스코프 밖 (스펙 §2.2, §9 참조).
+    """
+    reverse_doc_text = _load_reverse_doc_prompt()
+    await ensure_latest_prompt(store, "reverse_doc", reverse_doc_text)
+
+
+# ---------------------------------------------------------------------------
+# RefineRuleStore — v3 LightRAG extension (REFINE-06)
+# ---------------------------------------------------------------------------
+
+class RefineRuleStore(ABC):
+    @abstractmethod
+    async def active(self, stage: str) -> dict:
+        """Return the active config dict for a stage, merged with 'version' key.
+
+        Raises LookupError if no active rule exists for the stage.
+        """
+        ...
+
+    @abstractmethod
+    async def upsert(self, stage: str, config: dict) -> int:
+        """Insert a new version for `stage`, marking it active and deactivating prior.
+
+        Returns the new version number.
+        """
+        ...
+
+    @abstractmethod
+    async def list_versions(self, stage: str) -> list[dict]:
+        """Return all versions for `stage`, newest first.
+
+        Each item: {version, config, is_active, created_at}.
+        """
+        ...
+
+
+class InMemoryRefineRuleStore(RefineRuleStore):
+    def __init__(self):
+        # stage -> list of {version, config, is_active, created_at}, newest first
+        self._rules: dict[str, list[dict]] = {}
+
+    async def active(self, stage: str) -> dict:
+        versions = self._rules.get(stage, [])
+        for entry in versions:
+            if entry["is_active"]:
+                return {**entry["config"], "version": entry["version"]}
+        raise LookupError(f"No active refine rule for stage: {stage}")
+
+    async def upsert(self, stage: str, config: dict) -> int:
+        if "version" in config:
+            raise ValueError(
+                "config must not contain reserved key 'version' — it is store-managed"
+            )
+        versions = self._rules.setdefault(stage, [])
+        # Deactivate prior active
+        for entry in versions:
+            entry["is_active"] = False
+        next_version = (max((e["version"] for e in versions), default=0)) + 1
+        versions.insert(0, {
+            "version": next_version,
+            "config": dict(config),
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+        })
+        return next_version
+
+    async def list_versions(self, stage: str) -> list[dict]:
+        versions = self._rules.get(stage, [])
+        # Already stored newest-first; return shallow copies to prevent mutation leak
+        return [dict(entry) for entry in versions]
+
+
+class PostgresRefineRuleStore(RefineRuleStore):
+    def __init__(self, pool: asyncpg.Pool):
+        self._pool = pool
+
+    @staticmethod
+    def _parse_config(value) -> dict:
+        if isinstance(value, str):
+            return json.loads(value)
+        return value or {}
+
+    async def active(self, stage: str) -> dict:
+        row = await self._pool.fetchrow(
+            "SELECT version, config FROM forge_refine_rules WHERE stage = $1 AND is_active = TRUE",
+            stage,
+        )
+        if row is None:
+            raise LookupError(f"No active refine rule for stage: {stage}")
+        config = self._parse_config(row["config"])
+        return {**config, "version": row["version"]}
+
+    async def upsert(self, stage: str, config: dict) -> int:
+        if "version" in config:
+            raise ValueError(
+                "config must not contain reserved key 'version' — it is store-managed"
+            )
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                max_version = await conn.fetchval(
+                    "SELECT MAX(version) FROM forge_refine_rules WHERE stage = $1",
+                    stage,
+                )
+                new_version = (max_version or 0) + 1
+                await conn.execute(
+                    "UPDATE forge_refine_rules SET is_active = FALSE "
+                    "WHERE stage = $1 AND is_active = TRUE",
+                    stage,
+                )
+                await conn.execute(
+                    """INSERT INTO forge_refine_rules (stage, version, config, is_active)
+                       VALUES ($1, $2, $3::jsonb, TRUE)""",
+                    stage, new_version, json.dumps(config),
+                )
+                return new_version
+
+    async def list_versions(self, stage: str) -> list[dict]:
+        rows = await self._pool.fetch(
+            """SELECT version, config, is_active, created_at
+               FROM forge_refine_rules WHERE stage = $1
+               ORDER BY version DESC""",
+            stage,
+        )
+        return [
+            {
+                "version": r["version"],
+                "config": self._parse_config(r["config"]),
+                "is_active": r["is_active"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+
+# ---------------------------------------------------------------------------
+# DoclingLogStore — v3 LightRAG extension (DOCLING-08)
+# ---------------------------------------------------------------------------
+
+class DoclingLogStore(ABC):
+    @abstractmethod
+    async def insert(
+        self,
+        *,
+        job_id,
+        pages: int,
+        latency_ms: int,
+        status_code: int | None,
+        fallback: bool,
+        reason: str | None,
+    ) -> None:
+        ...
+
+
+class InMemoryDoclingLogStore(DoclingLogStore):
+    def __init__(self):
+        self._rows: list[dict] = []
+
+    async def insert(self, *, job_id, pages, latency_ms, status_code, fallback, reason):
+        self._rows.append({
+            "job_id": job_id,
+            "pages": pages,
+            "latency_ms": latency_ms,
+            "status_code": status_code,
+            "fallback": fallback,
+            "fallback_reason": reason,
+            "created_at": datetime.now(timezone.utc),
+        })
+
+    async def list_all(self) -> list[dict]:
+        return [dict(r) for r in self._rows]
+
+
+class PostgresDoclingLogStore(DoclingLogStore):
+    def __init__(self, pool: asyncpg.Pool):
+        self._pool = pool
+
+    async def insert(self, *, job_id, pages, latency_ms, status_code, fallback, reason):
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO forge_docling_logs
+                       (job_id, pages, latency_ms, status_code, fallback, fallback_reason)
+                   VALUES ($1, $2, $3, $4, $5, $6)""",
+                job_id, pages, latency_ms, status_code, fallback, reason,
+            )
+
+
+REFINE_RULE_DEFAULTS = {
+    "encoding": {"try_order": ["utf-8-sig", "utf-8", "cp949", "euc-kr"]},
+    "newline": {"patterns": [r"\\r\\n", r"\\n"], "replace_with": "\n"},
+    "special_char": {"map": {"~": "∼", "·": "·"}, "normalize_width": True},
+    "frontmatter": {"delimiters": ["---", "+++"], "keep_keys": []},
+    "codefence": {"strip": False, "keep_lang": True},
+    "traceability": {"pattern": r"(\w+)\s*↔\s*(\w+)", "replace": r"\1은 \2에 연결된다."},
+    "validator": {
+        "require_utf8": True,
+        "min_newlines": 1,
+        "min_korean_ratio": 0.1,
+        "min_length": 100,
+    },
+}
+
+
+async def seed_refine_rules(store: RefineRuleStore) -> None:
+    """Seed each stage with its default config if no active version exists."""
+    for stage, config in REFINE_RULE_DEFAULTS.items():
+        try:
+            await store.active(stage)
+        except LookupError:
+            await store.upsert(stage, config)
+            logger.info("Seeded default refine rule for stage: %s", stage)

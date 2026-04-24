@@ -4,6 +4,14 @@ from docx import Document as DocxDocument
 from openpyxl import Workbook
 from pptx import Presentation
 
+from job_store import InMemoryJobStore
+
+
+@pytest.fixture
+def store():
+    """테스트용 InMemoryJobStore — test_worker, test_callback_field_map 등에서 공유."""
+    return InMemoryJobStore()
+
 
 @pytest.fixture
 def sample_docx_bytes():

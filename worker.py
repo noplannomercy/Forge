@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 
 import httpx
@@ -10,7 +11,7 @@ from extractors.office import pptx_to_pdf
 from extractors.pdf import extract_text, pdf_to_images
 from job_store import JobStore
 from meta import MetaExtractor
-from models import ConvertResult, DocumentResult, Job, JobStatus, Quality
+from models import ConvertResult, Job, JobStatus, Quality
 from vlm import VLMClient
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,8 @@ async def process_job(
     meta_extractor: MetaExtractor | None = None,
     vlm_log_store=None,
     prompts: dict | None = None,
+    revdoc_generator=None,
+    docling_log_store=None,
 ) -> None:
     """비동기 변환 워커. asyncio.create_task로 호출됨."""
     await store.update_status(job.id, JobStatus.PROCESSING)
@@ -76,6 +79,44 @@ async def process_job(
             await store.save_result(job.id, result)
 
             # extract 경로도 메타 추출
+            meta_prompt_info = prompts.get("meta_extract", {}) if prompts else {}
+            meta_ver = f"meta_extract-v{meta_prompt_info.get('version', '?')}" if meta_prompt_info else "meta_extract-v?"
+            meta = await _extract_meta(result.text, meta_extractor, config, prompts=prompts)
+            if meta:
+                await store.save_meta(job.id, meta, meta_ver)
+
+        elif route == "docling":
+            # v3 (T14): docling-serve 경로. (T15) HWPX는 docling-serve가 네이티브로
+            # 파싱하지 못하므로 LibreOffice headless로 먼저 DOCX bridge를 거친다.
+            from extractors.docling_ex import extract as docling_extract
+
+            if job.source_format == "hwpx" or job.file_name.lower().endswith(".hwpx"):
+                from extractors.office import convert_hwpx_to_docx
+                docx_bytes = await convert_hwpx_to_docx(file_bytes)
+                # docling-serve에는 DOCX로 넘기되, 로그/추적을 위해 temp name 사용.
+                base = job.file_name.rsplit(".", 1)[0] if "." in job.file_name else job.file_name
+                bridged_name = base + ".docx"
+                result = await docling_extract(
+                    docx_bytes,
+                    bridged_name,
+                    config=config,
+                    docling_log_store=docling_log_store,
+                    job_id=job.id,
+                )
+                # 최종 ConvertResult는 원본 HWPX 표기로 복원한다 (사용자 관점).
+                result.source_format = "hwpx"
+                result.file_name = job.file_name
+            else:
+                result = await docling_extract(
+                    file_bytes,
+                    job.file_name,
+                    config=config,
+                    docling_log_store=docling_log_store,
+                    job_id=job.id,
+                )
+            await store.save_result(job.id, result)
+
+            # docling 경로도 extract와 동일하게 메타 추출
             meta_prompt_info = prompts.get("meta_extract", {}) if prompts else {}
             meta_ver = f"meta_extract-v{meta_prompt_info.get('version', '?')}" if meta_prompt_info else "meta_extract-v?"
             meta = await _extract_meta(result.text, meta_extractor, config, prompts=prompts)
@@ -144,6 +185,45 @@ async def process_job(
             if meta:
                 await store.save_meta(job.id, meta, meta_ver)
 
+        elif route == "reverse_doc":
+            # T10: reverse-doc route — generator orchestrates prompt+VLM+gate+refine.
+            if revdoc_generator is None:
+                raise RuntimeError("reverse_doc route requires revdoc_generator")
+
+            # source_code은 Job에 dynamic 속성(CF-3)으로 붙어 전달됨.
+            # 없으면 file_bytes를 UTF-8로 디코드 (강제 재시작 후 복구 시나리오).
+            source_code = getattr(job, "source_code", None)
+            if source_code is None:
+                source_code = file_bytes.decode("utf-8", errors="replace")
+
+            revdoc_result = await revdoc_generator.generate(source_code, job.file_name)
+
+            result = ConvertResult(
+                text=revdoc_result.result_text,
+                format="md",
+                pages=1,
+                file_name=job.file_name,
+                source_format=job.source_format,
+                route="reverse_doc",
+                quality=Quality(
+                    total_chars=len(revdoc_result.result_text),
+                    chars_per_page=len(revdoc_result.result_text),
+                    total_pages=1,
+                    failed_pages=0,
+                    confidence="high" if revdoc_result.gate["passed"] else "low",
+                    method="reverse_doc",
+                ),
+            )
+            await store.save_result(job.id, result)
+
+            # gate/refine/attempts/prompt_version을 meta에 저장 (Job.meta는 dict).
+            revdoc_meta = {
+                "revdoc_gate": revdoc_result.gate,
+                "refine_report": revdoc_result.refine_report,
+                "attempts": revdoc_result.attempts,
+            }
+            await store.save_meta(job.id, revdoc_meta, revdoc_result.prompt_version)
+
     except Exception as e:
         await store.save_error(job.id, str(e))
 
@@ -165,6 +245,36 @@ async def process_job(
                 "forge_status": updated_job.status,
                 "forge_error": updated_job.error,
             }
+            # Consumer-agnostic field rename (e.g. LightRAG content→text, file_name→file_source).
+            # C6: no consumer-specific branching — generic rename only.
+            if config.callback_field_map:
+                # Config validator already enforces valid JSON object (string→string) at load time.
+                # Defensive narrow except in case something bypasses validation — avoid
+                # silently eating the callback via the blanket `except Exception` above.
+                try:
+                    rename_map = json.loads(config.callback_field_map)
+                except json.JSONDecodeError:
+                    logger.error(
+                        "CALLBACK_FIELD_MAP malformed at callback time for job %s — sending unrenamed payload",
+                        job.id,
+                        exc_info=True,
+                    )
+                    rename_map = None
+
+                if rename_map is not None:
+                    renamed: dict = {}
+                    for k, v in payload.items():
+                        new_key = rename_map.get(k, k)
+                        if new_key in renamed:
+                            logger.warning(
+                                "CALLBACK_FIELD_MAP: key collision on '%s' for job %s — earlier value overwritten",
+                                new_key, job.id,
+                            )
+                        renamed[new_key] = v
+                    payload = renamed
+                    if not config.callback_keep_unmapped:
+                        payload = {k: v for k, v in payload.items() if k in rename_map.values()}
+
             cb_headers = {}
             if config.callback_api_key:
                 cb_headers["X-API-Key"] = config.callback_api_key

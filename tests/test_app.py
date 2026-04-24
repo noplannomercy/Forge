@@ -1,9 +1,8 @@
 import pytest
 import asyncio
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 from httpx import AsyncClient, ASGITransport
 from app import create_app
-from models import JobStatus
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from vlm import VLMClient, BatchResult
+from vlm import VLMClient
 from config import Config
 
 
@@ -192,3 +192,96 @@ async def test_process_batch_no_usage_returns_none(vlm_client):
 
     assert result.input_tokens is None
     assert result.output_tokens is None
+
+
+# ---------------------------------------------------------------------------
+# T9: process_text — text-only LLM call (REVDOC path)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_process_text_success(vlm_client):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "역문서 결과"}}]
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch.object(
+        vlm_client.client, "post",
+        new_callable=AsyncMock, return_value=mock_response,
+    ) as mock_post:
+        result = await vlm_client.process_text(
+            text="def f(): pass",
+            prompt="system prompt",
+            purpose="reverse_doc",
+        )
+
+    assert result == "역문서 결과"
+    # Verify payload shape: no vision content, 2-message system+user.
+    assert mock_post.await_count == 1
+    payload = mock_post.await_args.kwargs["json"]
+    assert payload["model"] == "test-model"
+    assert payload["messages"] == [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "def f(): pass"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_process_text_model_override(vlm_client):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
+    mock_response.raise_for_status = MagicMock()
+
+    with patch.object(
+        vlm_client.client, "post",
+        new_callable=AsyncMock, return_value=mock_response,
+    ) as mock_post:
+        await vlm_client.process_text(
+            text="code", prompt="p", purpose="reverse_doc",
+            model="gpt-4o-mini",
+        )
+
+    payload = mock_post.await_args.kwargs["json"]
+    assert payload["model"] == "gpt-4o-mini"
+
+
+@pytest.mark.asyncio
+async def test_process_text_raises_after_retries(vlm_client):
+    with patch.object(
+        vlm_client.client, "post",
+        new_callable=AsyncMock, side_effect=Exception("boom"),
+    ):
+        with patch("vlm.asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(RuntimeError, match="process_text failed"):
+                await vlm_client.process_text(
+                    text="code", prompt="p", purpose="reverse_doc",
+                )
+
+
+@pytest.mark.asyncio
+async def test_process_text_retry_then_success(vlm_client):
+    call_count = 0
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
+    mock_response.raise_for_status = MagicMock()
+
+    async def flaky(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            raise Exception("transient")
+        return mock_response
+
+    with patch.object(vlm_client.client, "post", side_effect=flaky):
+        with patch("vlm.asyncio.sleep", new_callable=AsyncMock):
+            result = await vlm_client.process_text(
+                text="code", prompt="p", purpose="reverse_doc",
+            )
+
+    assert result == "ok"
+    assert call_count == 3

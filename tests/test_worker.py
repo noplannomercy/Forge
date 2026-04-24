@@ -1,14 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from worker import process_job
-from job_store import InMemoryJobStore
 from models import JobStatus, ConvertResult, Quality, DocumentResult
 from config import Config
-
-
-@pytest.fixture
-def store():
-    return InMemoryJobStore()
 
 
 @pytest.fixture
@@ -219,6 +213,90 @@ async def test_worker_calls_callback_on_failure(store, config):
     call_args = mock_cb.call_args
     assert call_args[0][1]["forge_status"] == "failed"
     assert "corrupt" in call_args[0][1]["forge_error"]
+
+
+@pytest.mark.asyncio
+async def test_worker_docling_route_calls_extractor(store, config):
+    """T14: route='docling' → extractors.docling_ex.extract 호출 + result 저장."""
+    job = await store.create("test.pdf", "pdf", "docling")
+    mock_result = ConvertResult(
+        text="# Mocked docling output",
+        format="md",
+        pages=1,
+        file_name="test.pdf",
+        source_format="pdf",
+        route="docling",
+        quality=Quality(
+            total_chars=24, chars_per_page=24, total_pages=1,
+            failed_pages=0, confidence="high", method="docling",
+        ),
+    )
+    mock_extract = AsyncMock(return_value=mock_result)
+    with patch("extractors.docling_ex.extract", mock_extract):
+        with patch("worker.MetaExtractor") as MockMeta:
+            mock_meta = AsyncMock()
+            mock_meta.extract = AsyncMock(return_value={"category": "문서"})
+            mock_meta.close = AsyncMock()
+            MockMeta.return_value = mock_meta
+            await process_job(job, b"%PDF-fake", "docling", store, config)
+    mock_extract.assert_called_once()
+    updated = await store.get(job.id)
+    assert updated.status == JobStatus.COMPLETED
+    assert updated.result.text == "# Mocked docling output"
+    assert updated.result.quality.method == "docling"
+
+
+@pytest.mark.asyncio
+async def test_worker_docling_route_threads_log_store(store, config):
+    """T14: docling_log_store kwarg가 extractor에 그대로 전달된다."""
+    job = await store.create("test.pdf", "pdf", "docling")
+    mock_result = ConvertResult(
+        text="# md", format="md", pages=1, file_name="test.pdf",
+        source_format="pdf", route="docling",
+        quality=Quality(
+            total_chars=4, chars_per_page=4, total_pages=1,
+            failed_pages=0, confidence="high", method="docling",
+        ),
+    )
+    mock_extract = AsyncMock(return_value=mock_result)
+    sentinel_log_store = MagicMock()
+    with patch("extractors.docling_ex.extract", mock_extract):
+        with patch("worker.MetaExtractor") as MockMeta:
+            mock_meta = AsyncMock()
+            mock_meta.extract = AsyncMock(return_value={})
+            mock_meta.close = AsyncMock()
+            MockMeta.return_value = mock_meta
+            await process_job(
+                job, b"%PDF", "docling", store, config,
+                docling_log_store=sentinel_log_store,
+            )
+    kwargs = mock_extract.call_args.kwargs
+    assert kwargs["docling_log_store"] is sentinel_log_store
+    assert kwargs["job_id"] == job.id
+    assert kwargs["config"] is config
+
+
+@pytest.mark.asyncio
+async def test_worker_docling_calls_meta_extraction(store, config):
+    """T14: docling 경로도 extract/vlm과 동일하게 meta 추출을 수행한다."""
+    job = await store.create("report.pdf", "pdf", "docling")
+    mock_result = ConvertResult(
+        text="# md", format="md", pages=1, file_name="report.pdf",
+        source_format="pdf", route="docling",
+        quality=Quality(
+            total_chars=4, chars_per_page=4, total_pages=1,
+            failed_pages=0, confidence="high", method="docling",
+        ),
+    )
+    mock_extract = AsyncMock(return_value=mock_result)
+    with patch("extractors.docling_ex.extract", mock_extract):
+        with patch("worker.MetaExtractor") as MockMeta:
+            mock_meta = AsyncMock()
+            mock_meta.extract = AsyncMock(return_value={"category": "보고서"})
+            mock_meta.close = AsyncMock()
+            MockMeta.return_value = mock_meta
+            await process_job(job, b"%PDF", "docling", store, config)
+    mock_meta.extract.assert_called_once()
 
 
 @pytest.mark.asyncio
