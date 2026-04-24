@@ -70,6 +70,24 @@
   - 필요: 문서 종류 판별 로직 + prompt_type 확장 + 매핑 테이블 + 로깅
   - 선행 조건: 품질 평가 체계 + LLMOps 완성 후
 
+## /reverse-doc Gate 단순화 (완료 — 2026-04-24)
+
+> 스펙: docs/superpowers/specs/2026-04-24-revdoc-gate-simplification-design.md
+> 플랜: docs/superpowers/plans/2026-04-24-revdoc-gate-simplification.md
+
+- [x] Task 1: `_normalize_prompt_text` 헬퍼 (CRLF→LF + rstrip)
+- [x] Task 2: `ensure_latest_prompt` (파일→DB 자동 업그레이드)
+- [x] Task 3: `reverse_doc_v1.md` → `reverse_doc.md` 리네이밍 + 추적성 섹션 자유 서술로 완화
+- [x] Task 4: `seed_prompts` — `seed_if_empty` → `ensure_latest_prompt` 전환
+- [x] Task 5: `RevdocGate` — 추적성 정규식 3단계 → 섹션+길이 2단계, min_length 800→500
+- [x] Task 6: 영향받은 테스트 픽스쳐 업데이트 (generator, endpoint)
+- [x] Task 7: 실측 검증 — `PKG_LOAN_CALC.pkb` → attempts=1, gate.passed=true ✅
+
+핵심 변경:
+- Gate에서 Rule/Condition/Evidence 정규식 체크 완전 제거 (false-positive 원인)
+- 파일 변경 → DB 자동 반영 (`ensure_latest_prompt`, CRLF 정규화 포함)
+- 프롬프트 버전 관리: 파일명에 버전 없이 DB 버전 관리
+
 ## v2 — 추가 개선
   - 세부 텍스트: 이미지 안 텍스트 빠뜨리지 않기
 - [x] **callback_url** — 완료/실패 시 결과 POST + 3회 retry (2026-04-09)
