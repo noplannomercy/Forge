@@ -70,6 +70,12 @@
   - 필요: 문서 종류 판별 로직 + prompt_type 확장 + 매핑 테이블 + 로깅
   - 선행 조건: 품질 평가 체계 + LLMOps 완성 후
 
+## 향후 — /reverse-doc 고도화 (백로그)
+
+- [ ] **RAG 참조 기반 역문서 품질 강화** — LightRAG ingest 시 SME 메모/정책 문서를 함께 넣어 엔티티 그래프 활용, 또는 `/reverse-doc?context=` 파라미터로 외부 RAG 결과 주입
+  - 재검토 트리거: 실사용자 품질 불만 / 컴플라이언스 요구 구체화 / code2rule 팀 Forge consumer 구조 합의
+  - 참조: `memory/project_reverse_doc_rag_backlog.md`, code2rule 툴체인 (`C:/workspace/doc_root/code2rule/`)
+
 ## /reverse-doc Gate 단순화 (완료 — 2026-04-24)
 
 > 스펙: docs/superpowers/specs/2026-04-24-revdoc-gate-simplification-design.md
