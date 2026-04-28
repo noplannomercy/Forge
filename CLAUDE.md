@@ -137,3 +137,4 @@ ruff check .
 | docs/2026-04-07-document-converter-service-v2.md | office-hours 원본 설계 |
 | docs/DEPLOYMENT.md | 배포/운영 매뉴얼 (로컬/도커/AWS, 환경변수, 트러블슈팅) |
 | TODO.md | 전체 로드맵 + 진행 상태 (specs/plans의 상위 문서) |
+| ../hcs-ingestion-router/CLAUDE.md | HCS Ingestion Router (포트 8001) — Bitbucket PR→Forge→LightRAG 오케스트레이터. Forge callback_url 수신 서비스. |
