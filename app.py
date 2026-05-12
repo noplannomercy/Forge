@@ -14,6 +14,7 @@ from refine import Refiner
 from router import UnsupportedFormatError, detect_route
 from worker import process_job
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
